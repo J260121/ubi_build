@@ -23,8 +23,8 @@
 #sed -i 's/ci-llvm=true/ci-llvm=false/g' feeds/packages/lang/rust/Makefile
 
 # add date in output file name
-sed -i -e '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' \
-       -e '/^IMG_PREFIX:=/ s/\($(SUBTARGET)\)/\1-$(BUILD_DATE)/' include/image.mk
+sed -i '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' include/image.mk 
+sed -i 's/^IMG_PREFIX:=.*/IMG_PREFIX:=\\$(BUILD_DATE)-&/' include/image.mk
 
 # set ubi to 122M
 # sed -i 's/reg = <0x5c0000 0x7000000>;/reg = <0x5c0000 0x7a40000>;/' target/linux/mediatek/dts/mt7981b-cudy-tr3000-v1-ubootmod.dts
