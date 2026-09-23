@@ -260,13 +260,16 @@ jobs:
 
           cd "${OPENWRT_DIR}"
 
-          echo "======================================"
-          echo "Apply Cudy build modifications"
-          echo "======================================"
-
-          chmod +x $DIY_P1 $DIY_P2
-          $DIY_P1
-          $DIY_P2
+          echo "===== Check scripts ====="
+          ls -lah diy-part*.sh
+      
+          chmod +x diy-part1.sh diy-part2.sh
+      
+          echo "===== Run diy-part1.sh ====="
+          ./diy-part1.sh
+      
+          echo "===== Run diy-part2.sh ====="
+          ./diy-part2.sh
           # --------------------------------------------------------
           # Rust
           # --------------------------------------------------------
