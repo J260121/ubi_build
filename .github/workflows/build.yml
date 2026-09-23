@@ -29,7 +29,9 @@ jobs:
 
       OPENWRT_DIR: openwrt
       CUDY_DIR: cudy
-
+      
+      DIY_P1: diy-part1.sh
+      DIY_P2: diy-part2.sh
     steps:
 
       # ============================================================
@@ -211,9 +213,10 @@ jobs:
           cp -av "${CUDY_DIR}/dts/." "${OPENWRT_DIR}/target/linux/mediatek/dts"
           cp -av "${CUDY_DIR}/package/." "${OPENWRT_DIR}/package/"
           cp -av "${CUDY_DIR}/config/." "${OPENWRT_DIR}/.config"
+          cp -av "${CUDY_DIR}/sh/." "${OPENWRT_DIR}/"
       #cp -f defconfig/mt7981-QLB-4Pro.config .config
       # ============================================================
-      # 13. 执行 Cudy DIY part 2
+      # 8. 执行 Cudy DIY part 2
       # ============================================================
 
       - name: Apply Cudy build modifications
@@ -226,6 +229,9 @@ jobs:
           echo "Apply Cudy build modifications"
           echo "======================================"
 
+          chmod +x $DIY_P1 $DIY_P2
+          ./$DIY_P1
+          ./$DIY_P2
           # --------------------------------------------------------
           # Rust
           # --------------------------------------------------------
@@ -254,7 +260,7 @@ jobs:
 
 
       # ============================================================
-      # 14. 添加额外软件包
+      # 9. 添加额外软件包
       # ============================================================
 
       - name: Add extra packages
@@ -277,7 +283,7 @@ jobs:
 
 
       # ============================================================
-      # 15. 生成最终 config
+      # 10. 生成最终 config
       # ============================================================
 
       - name: Generate final config
@@ -295,7 +301,7 @@ jobs:
 
 
       # ============================================================
-      # 17. 下载源码包
+      # 11. 下载源码包
       # ============================================================
 
       - name: Download sources
@@ -308,7 +314,7 @@ jobs:
 
 
       # ============================================================
-      # 18. 编译
+      # 12. 编译
       # ============================================================
 
       - name: Build firmware
@@ -328,7 +334,7 @@ jobs:
 
 
       # ============================================================
-      # 19. 编译失败时输出日志
+      # 13. 编译失败时输出日志
       # ============================================================
 
       - name: Show build log on failure
@@ -347,7 +353,7 @@ jobs:
 
 
       # ============================================================
-      # 20. 整理固件
+      # 14. 整理固件
       # ============================================================
 
       - name: Prepare firmware
@@ -374,7 +380,7 @@ jobs:
 
 
       # ============================================================
-      # 21. 生成 SHA256
+      # 15. 生成 SHA256
       # ============================================================
 
       - name: Generate SHA256
@@ -390,14 +396,14 @@ jobs:
 
 
       # ============================================================
-      # 22. 上传固件 Artifact
+      # 16. 上传固件 Artifact
       # ============================================================
 
       - name: Upload firmware
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: Cudy-TR3000-${{ inputs.flash_size }}-${{ inputs.ubi_size }}-${{ github.run_number }}
+          name: QLB-4Pro--${{ github.run_number }}
           path: firmware/
           if-no-files-found: error
           compression-level: 6
@@ -405,14 +411,14 @@ jobs:
 
 
       # ============================================================
-      # 23. 上传编译日志
+      # 17. 上传编译日志
       # ============================================================
 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Cudy-TR3000-build-log-${{ github.run_number }}
+          name: QLB-4Pro-build-log-${{ github.run_number }}
           path: |
             openwrt/build.log
           if-no-files-found: ignore
