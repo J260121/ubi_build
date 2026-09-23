@@ -236,6 +236,7 @@ jobs:
             cp -a sh/. "${OPENWRT_DIR}/"
             
             echo "Deployment completed successfully."
+            git log -1 --oneline
         #  cd "${CUDY_DIR}"
         #  cp -f /dts/. "${OPENWRT_DIR}/target/linux/mediatek/dts/"
         #  cp -f /package/. "${OPENWRT_DIR}/package/"
@@ -257,8 +258,8 @@ jobs:
           echo "======================================"
 
           chmod +x $DIY_P1 $DIY_P2
-          ./$DIY_P1
-          ./$DIY_P2
+          $DIY_P1
+          $DIY_P2
           # --------------------------------------------------------
           # Rust
           # --------------------------------------------------------
