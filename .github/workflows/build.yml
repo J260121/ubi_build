@@ -352,60 +352,6 @@ jobs:
             2>/dev/null || true
 
 
-              # ==================================================
-              # 添加 QLB-4Pro 设备定义
-              # ==================================================
-              
-              FILOGIC_MK="target/linux/mediatek/image/filogic.mk"
-              
-              if [ ! -f "$FILOGIC_MK" ]; then
-                  echo "错误：找不到 $FILOGIC_MK"
-                  exit 1
-              fi
-              
-              if grep -q 'define Device/QLB-4Pro' "$FILOGIC_MK"; then
-                  echo "QLB-4Pro 设备定义已存在，跳过"
-              else
-                  python3 - "$FILOGIC_MK" <<'PY'
-              from pathlib import Path
-              import sys
-              
-              file_path = Path(sys.argv[1])
-              content = file_path.read_text()
-              
-              marker = "TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod"
-              
-              device_block = """define Device/QLB-4Pro
-                DEVICE_VENDOR := QLB4Pro
-                DEVICE_MODEL := 4Pro
-                DEVICE_VARIANT := (MTK layout)
-                DEVICE_DTS := mt7981b-QLB-4pro
-                DEVICE_DTS_DIR := ../dts
-                DEVICE_PACKAGES := kmod-usb3 f2fsck mkf2fs
-                BLOCKSIZE := 128k
-                PAGESIZE := 2048
-                IMAGE_SIZE := 113408k
-                IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-              endef
-              TARGET_DEVICES += QLB-4Pro
-              """
-              
-              if marker not in content:
-                  print("错误：找不到 QLB-4Pro 设备定义的插入位置")
-                  print("查找内容：", marker)
-                  sys.exit(1)
-              
-              content = content.replace(
-                  marker,
-                  marker + "\n\n" + device_block.rstrip(),
-                  1
-              )
-              
-              file_path.write_text(content)
-              print("QLB-4Pro 设备定义添加成功")
-              PY
-              fi
-              
 
 
       - name: 3. 执行 DIY 脚本
@@ -472,6 +418,60 @@ jobs:
 
             echo
             echo "===== 检查 diy-part2.sh 语法 ====="
+              # ==================================================
+              # 添加 QLB-4Pro 设备定义
+              # ==================================================
+              
+              FILOGIC_MK="target/linux/mediatek/image/filogic.mk"
+              
+              if [ ! -f "$FILOGIC_MK" ]; then
+                  echo "错误：找不到 $FILOGIC_MK"
+                  exit 1
+              fi
+              
+              if grep -q 'define Device/QLB-4Pro' "$FILOGIC_MK"; then
+                  echo "QLB-4Pro 设备定义已存在，跳过"
+              else
+                  python3 - "$FILOGIC_MK" <<'PY'
+              from pathlib import Path
+              import sys
+              
+              file_path = Path(sys.argv[1])
+              content = file_path.read_text()
+              
+              marker = "TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod"
+              
+              device_block = """define Device/QLB-4Pro
+                DEVICE_VENDOR := QLB4Pro
+                DEVICE_MODEL := 4Pro
+                DEVICE_VARIANT := (MTK layout)
+                DEVICE_DTS := mt7981b-QLB-4pro
+                DEVICE_DTS_DIR := ../dts
+                DEVICE_PACKAGES := kmod-usb3 f2fsck mkf2fs
+                BLOCKSIZE := 128k
+                PAGESIZE := 2048
+                IMAGE_SIZE := 113408k
+                IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+              endef
+              TARGET_DEVICES += QLB-4Pro
+              """
+              
+              if marker not in content:
+                  print("错误：找不到 QLB-4Pro 设备定义的插入位置")
+                  print("查找内容：", marker)
+                  sys.exit(1)
+              
+              content = content.replace(
+                  marker,
+                  marker + "\n\n" + device_block.rstrip(),
+                  1
+              )
+              
+              file_path.write_text(content)
+              print("QLB-4Pro 设备定义添加成功")
+              PY
+              fi
+              
 
 
 
