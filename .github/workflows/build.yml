@@ -197,8 +197,8 @@ jobs:
       - name: Update feeds
         working-directory: ${{ env.OPENWRT_DIR }}
         run: |
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+        #./scripts/feeds update -a
+        #./scripts/feeds install -a
 
 
       # ============================================================
@@ -249,37 +249,9 @@ jobs:
       - name: Apply Cudy build modifications
         run: |
           set -e
-          DIY_P1="${OPENWRT_DIR}/diy-part1.sh"
-          DIY_P2="${OPENWRT_DIR}/diy-part2.sh"
-          
-          echo "DIY_P1=${DIY_P1}"
-          echo "DIY_P2=${DIY_P2}"
-          
-          ls -lh "${DIY_P1}" "${DIY_P2}"
-          
-          chmod +x "${DIY_P1}" "${DIY_P2}"
-          
-          echo "===== Run DIY Part 1 ====="
-          bash "${DIY_P1}"
-          
-          echo "===== Run DIY Part 2 ====="
-          bash "${DIY_P2}"          
-          echo "===== DIY completed ====="
 
-
-
-          # --------------------------------------------------------
-          # Build date
-          # --------------------------------------------------------
-
-          if grep -q '^IMG_PREFIX:=' include/image.mk; then
-
-            sed -i \
-              -e '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' \
-              -e '/^IMG_PREFIX:=/ s/\($(SUBTARGET)\)/\1-$(BUILD_DATE)/' \
-              include/image.mk
-
-          fi
+            pwd
+            find "${GITHUB_WORKSPACE}" -name "diy-part1.sh" -o -name "diy-part2.sh"
 
 
       # ============================================================
