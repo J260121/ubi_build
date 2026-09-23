@@ -44,21 +44,49 @@ sed -i 's/^IMG_PREFIX:=.*/IMG_PREFIX:=\\$(BUILD_DATE)-&/' include/image.mk
 #}' target/linux/mediatek/dts/mt7981b-cudy-tr3000-512mb-v1.dtsi
 
 # 
-grep -q "define Device/QLB-4Pro" target/linux/mediatek/image/filogic.mk || sed -i '/TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod/ a \
-define Device/QLB-4Pro
-  DEVICE_VENDOR := QLB4Pro
-  DEVICE_MODEL := 4Pro
-  DEVICE_VARIANT := (MTK layout)
-  DEVICE_DTS := mt7981b-QLB-4Pro
-  DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-usb3 f2fsck mkf2fs
-  BLOCKSIZE := 128k
-  PAGESIZE := 2048
-  IMAGE_SIZE := 113408k
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-endef
-TARGET_DEVICES += QLB-4Pro
-' target/linux/mediatek/image/filogic.mk
+
+# ==================================================
+# 添加 QLB-4Pro 设备定义
+# ==================================================
+
+FILOGIC_MK="target/linux/mediatek/image/filogic.mk"
+
+if [ ! -f "$FILOGIC_MK" ]; then
+    echo "错误：找不到 $FILOGIC_MK"
+    exit 1
+fi
+
+if grep -q 'define Device/QLB-4Pro' "$FILOGIC_MK"; then
+    echo "QLB-4Pro 设备定义已存在，跳过"
+else
+    echo "正在添加 QLB-4Pro 设备定义..."
+
+    awk '
+    /TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod/ {
+        print
+        print ""
+        print "define Device/QLB-4Pro"
+        print "  DEVICE_VENDOR := QLB4Pro"
+        print "  DEVICE_MODEL := 4Pro"
+        print "  DEVICE_VARIANT := (MTK layout)"
+        print "  DEVICE_DTS := mt7981-QLB-4pro"
+        print "  DEVICE_DTS_DIR := ../dts"
+        print "  DEVICE_PACKAGES := kmod-usb3 f2fsck mkf2fs"
+        print "  BLOCKSIZE := 128k"
+        print "  PAGESIZE := 2048"
+        print "  IMAGE_SIZE := 113408k"
+        print "  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata"
+        print "endef"
+        print "TARGET_DEVICES += QLB-4Pro"
+        next
+    }
+    { print }
+    ' "$FILOGIC_MK" > "$FILOGIC_MK.tmp"
+
+    mv "$FILOGIC_MK.tmp" "$FILOGIC_MK"
+
+    echo "QLB-4Pro 设备定义添加成功"
+fi
 
 # 网络配置支持匹配新设备名
 #sed -i '/cudy,tr3000-v1|\\/a cudy,tr3000-512mb-v1|\\' target/linux/mediatek/filogic/base-files/etc/board.d/02_network
