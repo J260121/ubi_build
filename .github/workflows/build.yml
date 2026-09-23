@@ -234,9 +234,16 @@ jobs:
             # 目标是 OpenWrt 根目录，肯定存在
             echo "Copying shell scripts..."
             cp -a sh/. "${OPENWRT_DIR}/"
+            echo "===== dts ====="
+            find ""${OPENWRT_DIR}/target/linux/mediatek/dts/" -type f | sort
+            
+            echo "===== package ====="
+            find "${OPENWRT_DIR}/package/" -type f | sort
+            
+            echo "===== config ====="
+            find "${OPENWRT_DIR}" -type f | sort
             
             echo "Deployment completed successfully."
-            git log -1 --oneline
         #  cd "${CUDY_DIR}"
         #  cp -f /dts/. "${OPENWRT_DIR}/target/linux/mediatek/dts/"
         #  cp -f /package/. "${OPENWRT_DIR}/package/"
