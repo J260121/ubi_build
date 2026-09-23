@@ -1,6 +1,4 @@
-
 name: Build ImmortalWrt MT7981 QLB
-
 on:
   workflow_dispatch:
     inputs:
@@ -768,55 +766,55 @@ jobs:
           # ---------------------------------------------------
 
           cat > "${FIRMWARE_DIR}/build-info.txt" <<EOF
-============================================================
-ImmortalWrt MT7981 Cudy Build Information
-============================================================
+              ============================================================
+              ImmortalWrt MT7981 Cudy Build Information
+              ============================================================
+              
+              GitHub Repository:
+              ${GITHUB_REPOSITORY}
 
-GitHub Repository:
-${GITHUB_REPOSITORY}
-
-GitHub Run:
-${GITHUB_RUN_NUMBER}
-
-GitHub SHA:
-${GITHUB_SHA}
-
-GitHub Ref:
-${GITHUB_REF}
-
-Workflow:
-${GITHUB_WORKFLOW}
-
-Runner:
-${RUNNER_OS}
-
-Build Time:
-$(date '+%Y-%m-%d %H:%M:%S %Z')
-
-============================================================
-Source
-============================================================
-
-Cudy Source:
-${CUDY_REPO}
-
-OpenWrt Source:
-${OPENWRT_REPO}
-
-OpenWrt Branch:
-${OPENWRT_BRANCH}
-
-============================================================
-Extra Packages
-============================================================
-
-${EXTRA_PACKAGES}
-
-============================================================
-Build Result
-============================================================
-
-EOF
+                GitHub Run:
+                ${GITHUB_RUN_NUMBER}
+                
+                GitHub SHA:
+                ${GITHUB_SHA}
+                
+                GitHub Ref:
+                ${GITHUB_REF}
+                
+                Workflow:
+                ${GITHUB_WORKFLOW}
+                
+                Runner:
+                ${RUNNER_OS}
+                
+                Build Time:
+                $(date '+%Y-%m-%d %H:%M:%S %Z')
+                
+                ============================================================
+                Source
+                ============================================================
+                
+                Cudy Source:
+                ${CUDY_REPO}
+                
+                OpenWrt Source:
+                ${OPENWRT_REPO}
+                
+                OpenWrt Branch:
+                ${OPENWRT_BRANCH}
+                
+                ============================================================
+                Extra Packages
+                ============================================================
+                
+                ${EXTRA_PACKAGES}
+                
+                ============================================================
+                Build Result
+                ============================================================
+                
+                EOF
 
 
           # ---------------------------------------------------
