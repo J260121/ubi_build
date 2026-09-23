@@ -1,5 +1,5 @@
 
-name: Build ImmortalWrt MT7981 Cudy
+name: Build ImmortalWrt MT7981 QLB
 
 on:
   workflow_dispatch:
