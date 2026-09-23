@@ -210,20 +210,32 @@ jobs:
       - name: Copy fold
         run: |
           set -e
-          cd "${CUDY_DIR}"
-
-          cp -a dts/. \
-            "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-
-          cp -a package/. \
-            "${OPENWRT_DIR}/package/"
-
-          cp -f config/mt7981-QLB-4Pro.config \
-            "${OPENWRT_DIR}/.config"
-          
-          cp -a sh/. \
-            "${OPENWRT_DIR}/"
+            # 进入源目录
+            cd "${CUDY_DIR}"
             
+            # 1. 复制 DTS 文件
+            # 确保目标目录结构存在
+            mkdir -p "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+            echo "Copying DTS files..."
+            cp -a dts/. "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+            
+            # 2. 复制 Package 文件
+            # 确保目标目录存在
+            mkdir -p "${OPENWRT_DIR}/package/"
+            echo "Copying packages..."
+            cp -a package/. "${OPENWRT_DIR}/package/"
+            
+            # 3. 复制配置文件
+            # .config 位于根目录，通常已存在，但为了稳健可不做 mkdir，直接 cp
+            echo "Copying config..."
+            cp -f config/mt7981-QLB-4Pro.config "${OPENWRT_DIR}/.config"
+            
+            # 4. 复制 Shell 脚本/工具
+            # 目标是 OpenWrt 根目录，肯定存在
+            echo "Copying shell scripts..."
+            cp -a sh/. "${OPENWRT_DIR}/"
+            
+            echo "Deployment completed successfully."
         #  cd "${CUDY_DIR}"
         #  cp -f /dts/. "${OPENWRT_DIR}/target/linux/mediatek/dts/"
         #  cp -f /package/. "${OPENWRT_DIR}/package/"
