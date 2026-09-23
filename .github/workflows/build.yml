@@ -210,10 +210,11 @@ jobs:
       - name: Copy fold
         run: |
           set -e
-          cp -av "${CUDY_DIR}/dts/" "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-          cp -av "${CUDY_DIR}/package/" "${OPENWRT_DIR}/package/"
-          cp -av "${CUDY_DIR}/config/*.config" "${OPENWRT_DIR}/.config"
-          cp -av "${CUDY_DIR}/sh/" "${OPENWRT_DIR}/"
+          cd
+          cp -f "${CUDY_DIR}/dts/." "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+          cp -f "${CUDY_DIR}/package/." "${OPENWRT_DIR}/package/"
+          cp -f "${CUDY_DIR}/config/mt7981-QLB-4Pro.config" "${OPENWRT_DIR}/.config"
+          cp -f "${CUDY_DIR}/sh/." "${OPENWRT_DIR}/"
       #cp -f defconfig/mt7981-QLB-4Pro.config .config
       # ============================================================
       # 8. 执行 Cudy DIY part 2
