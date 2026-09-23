@@ -1,420 +1,441 @@
-name: QLB-4Pro ImmortalWrt 6.6
+
+name: Build ImmortalWrt MT7981 QLB-4Pro
 
 on:
   workflow_dispatch:
-    inputs:
-      extra_packages:
-        description: "额外软件包，空格分隔"
-        required: false
-        default: "luci-app-ttyd luci-app-upnp kmod-usb-net-cdc-ether kmod-usb-net-rndis kmod-mtd-rw"
 
-      clean:
-        description: "清理编译缓存"
-        required: true
-        type: boolean
-        default: false
+permissions:
+  contents: write
+
+env:
+  # ============================================================
+  # 源码
+  # ============================================================
+  OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
+  OPENWRT_BRANCH: openwrt-24.10-6.6
+
+  CUDY_REPO: https://github.com/J260121/ubi_build.git
+
+  # ============================================================
+  # 目录
+  #
+  # github.workspace:
+  # /home/runner/work/ubi_build/ubi_build
+  #
+  # 所以 ../ 就是：
+  # /home/runner/work/ubi_build
+  #
+  # 最终：
+  # /home/runner/work/ubi_build/
+  # ├── ubi_build/
+  # ├── cudy/
+  # └── openwrt/
+  # ============================================================
+  ROOT_DIR: ${{ github.workspace }}/..
+
+  CUDY_DIR: ${{ github.workspace }}/../cudy
+  OPENWRT_DIR: ${{ github.workspace }}/../openwrt
 
 jobs:
   build:
     runs-on: ubuntu-24.04
 
-    permissions:
-      contents: read
-
-    env:
-      OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
-      OPENWRT_BRANCH: openwrt-24.10-6.6
-
-      CUDY_REPO: https://github.com/J260121/ubi_build.git
-
-      OPENWRT_DIR: openwrt
-      CUDY_DIR: cudy
-      
     steps:
 
-      # ============================================================
-      # 1. Checkout
-      # ============================================================
-
+      # ==========================================================
+      # 1. Checkout 当前仓库
+      # ==========================================================
       - name: Checkout workflow repository
         uses: actions/checkout@v4
 
-
-      # ============================================================
-      # 2. 清理 Runner 空间
-      # ============================================================
-
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-
-          df -h
-
-
-      # ============================================================
-      # 3. 安装编译依赖
-      # ============================================================
-
+      # ==========================================================
+      # 2. 安装编译依赖
+      # ==========================================================
       - name: Install build dependencies
         run: |
+          set -e
+
           sudo apt-get update
 
           sudo apt-get install -y \
-            ack \
-            antlr3 \
-            asciidoc \
-            autoconf \
-            automake \
-            autopoint \
-            binutils \
-            bison \
             build-essential \
-            bzip2 \
-            ccache \
             clang \
-            cmake \
-            cpio \
-            curl \
-            device-tree-compiler \
-            ecj \
-            fastjar \
             flex \
+            bison \
+            g++ \
             gawk \
-            gettext \
             gcc-multilib \
             g++-multilib \
+            gettext \
             git \
-            gnutls-dev \
-            gperf \
-            haveged \
-            help2man \
-            intltool \
-            lib32gcc-s1 \
-            libc6-dev-i386 \
-            libelf-dev \
-            libglib2.0-dev \
-            libgmp3-dev \
-            libltdl-dev \
-            libmpc-dev \
-            libmpfr-dev \
-            libncurses-dev \
-            libpython3-dev \
-            libreadline-dev \
+            libncurses5-dev \
+            libncursesw5-dev \
             libssl-dev \
-            libtool \
-            libyaml-dev \
-            libz-dev \
-            lld \
-            llvm \
-            lrzsz \
-            mkisofs \
-            msmtp \
-            nano \
-            ninja-build \
-            p7zip \
-            p7zip-full \
-            patch \
-            pkgconf \
             python3 \
-            python3-pip \
-            python3-ply \
-            python3-docutils \
-            python3-pyelftools \
-            qemu-utils \
-            re2c \
+            python3-setuptools \
+            python3-distutils \
             rsync \
-            scons \
-            squashfs-tools \
-            subversion \
-            swig \
-            texinfo \
-            uglifyjs \
             unzip \
-            vim \
-            wget \
-            xmlto \
-            xxd \
             zlib1g-dev \
-            zstd
+            file \
+            wget \
+            curl \
+            xsltproc \
+            swig \
+            time \
+            quilt \
+            ccache
 
-          df -h
-
-
-      # ============================================================
-      # 4. Clone ImmortalWrt
-      # ============================================================
-
-      - name: Clone ImmortalWrt
+      # ==========================================================
+      # 3. Clone Cudy
+      #
+      # https://github.com/J260121/ubi_build.git
+      #
+      # 目标：
+      # /home/runner/work/ubi_build/cudy
+      # ==========================================================
+      - name: Clone Cudy source
         run: |
-          git clone \
-            --depth=1 \
-            --single-branch \
-            --filter=blob:none \
-            -b "${OPENWRT_BRANCH}" \
-            "${OPENWRT_REPO}" \
-            "${OPENWRT_DIR}"
-
-          cd "${OPENWRT_DIR}"
+          set -e
 
           echo "======================================"
-          echo "ImmortalWrt commit"
+          echo "Clone Cudy source"
           echo "======================================"
 
-          git log -1 --oneline
+          rm -rf "${CUDY_DIR}"
 
-
-      # ============================================================
-      # 5. Clone diy repository
-      # ============================================================
-
-      - name: Clone diy repository
-        run: |
           git clone \
             --depth=1 \
             "${CUDY_REPO}" \
             "${CUDY_DIR}"
 
-          cd "${CUDY_DIR}"
-
-          echo "======================================"
-          echo "Cudy repository commit"
-          echo "======================================"
-
-          git log -1 --oneline
+          echo
+          echo "CUDY_DIR=${CUDY_DIR}"
 
           echo
-          echo "Repository files:"
-          find . -maxdepth 2 -type f | sort
+          echo "===== Cudy files ====="
+          find "${CUDY_DIR}" \
+            -maxdepth 4 \
+            -type f \
+            | sort
 
-
-      # ============================================================
-      # 6. 更新 feeds
-      # ============================================================
-
-      - name: Update feeds
-        working-directory: ${{ env.OPENWRT_DIR }}
-        run: |
-        #./scripts/feeds update -a
-        #./scripts/feeds install -a
-
-
-      # ============================================================
-      # 7. 复制 fold
-      # ============================================================
-
-      - name: Copy fold
-        run: |
-          set -e
-            # 进入源目录
-            cd "${CUDY_DIR}"
-            
-            # 1. 复制 DTS 文件
-            # 确保目标目录结构存在
-            mkdir -p "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-            echo "Copying DTS files..."
-            cp -a dts/. "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-            
-            # 2. 复制 Package 文件
-            # 确保目标目录存在
-            mkdir -p "${OPENWRT_DIR}/package/"
-            echo "Copying packages..."
-            cp -a package/. "${OPENWRT_DIR}/package/"
-            
-            # 3. 复制配置文件
-            # .config 位于根目录，通常已存在，但为了稳健可不做 mkdir，直接 cp
-            echo "Copying config..."
-            cp -f config/mt7981-QLB-4Pro.config "${OPENWRT_DIR}/.config"
-            
-            # 4. 复制 Shell 脚本/工具
-            # 目标是 OpenWrt 根目录，肯定存在
-            echo "Copying shell scripts..."
-            cp -a sh/. "${OPENWRT_DIR}/"
-            echo "===== dts ====="
-            find "${OPENWRT_DIR}/target/linux/mediatek/dts/" -type f | sort
-            
-            echo "===== package ====="
-            find "${OPENWRT_DIR}/package/" -type f | sort
-            
-            echo "===== config ====="
-            find "${OPENWRT_DIR}" -type f | sort
-            
-            echo "Deployment completed successfully."
-      # ============================================================
-      # 8. 执行 DIY part
-      # ============================================================
-
-      - name: Apply Cudy build modifications
+      # ==========================================================
+      # 4. Clone ImmortalWrt
+      #
+      # 目标：
+      # /home/runner/work/ubi_build/openwrt
+      # ==========================================================
+      - name: Clone ImmortalWrt
         run: |
           set -e
 
-            pwd
-            find "${GITHUB_WORKSPACE}" -name "diy-part1.sh" -o -name "diy-part2.sh"
+          echo "======================================"
+          echo "Clone ImmortalWrt"
+          echo "======================================"
 
+          rm -rf "${OPENWRT_DIR}"
 
-      # ============================================================
-      # 9. 添加额外软件包
-      # ============================================================
-
-      - name: Add extra packages
-        if: ${{ inputs.extra_packages != '' }}
-        env:
-          EXTRA_PACKAGES: ${{ inputs.extra_packages }}
-        run: |
-          set -e
-
-          cd "${OPENWRT_DIR}"
-
-          echo "Extra packages:"
-          echo "${EXTRA_PACKAGES}"
-
-          for pkg in ${EXTRA_PACKAGES}; do
-
-            echo "CONFIG_PACKAGE_${pkg}=y" >> .config
-
-          done
-
-
-      # ============================================================
-      # 10. 生成最终 config
-      # ============================================================
-
-      - name: Generate final config
-        run: |
-          cd "${OPENWRT_DIR}"
-
-          make defconfig
+          git clone \
+            --depth=1 \
+            --branch "${OPENWRT_BRANCH}" \
+            "${OPENWRT_REPO}" \
+            "${OPENWRT_DIR}"
 
           echo
-          echo "======================================"
-          echo "Target configuration"
-          echo "======================================"
+          echo "OPENWRT_DIR=${OPENWRT_DIR}"
 
-          grep '^CONFIG_TARGET_' .config || true
-
-
-      # ============================================================
-      # 11. 下载源码包
-      # ============================================================
-
-      - name: Download sources
-        run: |
-          cd "${OPENWRT_DIR}"
-
-          make download \
-            -j$(nproc) \
-            V=s
-
-
-      # ============================================================
-      # 12. 编译
-      # ============================================================
-
-      - name: Build firmware
-        run: |
-          set -o pipefail
-
-          cd "${OPENWRT_DIR}"
-
-          echo "======================================"
-          echo "Start build"
-          echo "======================================"
-
-          make \
-            -j$(nproc) \
-            V=s \
-            2>&1 | tee build.log
-
-
-      # ============================================================
-      # 13. 编译失败时输出日志
-      # ============================================================
-
-      - name: Show build log on failure
-        if: failure()
-        run: |
-          if [ -f "${OPENWRT_DIR}/build.log" ]; then
-
-            echo "======================================"
-            echo "Last 500 lines"
-            echo "======================================"
-
-            tail -500 \
-              "${OPENWRT_DIR}/build.log"
-
-          fi
-
-
-      # ============================================================
-      # 14. 整理固件
-      # ============================================================
-
-      - name: Prepare firmware
-        if: success()
+      # ==========================================================
+      # 5. 检查目录结构
+      # ==========================================================
+      - name: Check directory structure
         run: |
           set -e
 
-          mkdir -p firmware
+          echo "======================================"
+          echo "Directory structure"
+          echo "======================================"
+
+          echo
+          echo "===== ROOT ====="
+          ls -lah "${ROOT_DIR}"
+
+          echo
+          echo "===== CUDY ====="
+          ls -lah "${CUDY_DIR}"
+
+          echo
+          echo "===== OPENWRT ====="
+          ls -lah "${OPENWRT_DIR}"
+
+      # ==========================================================
+      # 6. 复制 DTS / package / config / sh
+      # ==========================================================
+      - name: Copy Cudy custom files
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "Copy Cudy custom files"
+          echo "======================================"
+
+          # ------------------------------------------------------
+          # DTS
+          # ------------------------------------------------------
+          echo
+          echo "Copying DTS files..."
+
+          mkdir -p \
+            "${OPENWRT_DIR}/target/linux/mediatek/dts"
 
           cp -av \
-            "${OPENWRT_DIR}"/bin/targets/*/*/* \
-            firmware/ \
+            "${CUDY_DIR}/dts/." \
+            "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+
+          # ------------------------------------------------------
+          # Package
+          # ------------------------------------------------------
+          echo
+          echo "Copying packages..."
+
+          mkdir -p \
+            "${OPENWRT_DIR}/package"
+
+          cp -av \
+            "${CUDY_DIR}/package/." \
+            "${OPENWRT_DIR}/package/"
+
+          # ------------------------------------------------------
+          # Config
+          # ------------------------------------------------------
+          echo
+          echo "Copying config..."
+
+          cp -av \
+            "${CUDY_DIR}/config/mt7981-QLB-4Pro.config" \
+            "${OPENWRT_DIR}/.config"
+
+          # ------------------------------------------------------
+          # DIY scripts
+          # ------------------------------------------------------
+          echo
+          echo "Copying shell scripts..."
+
+          cp -av \
+            "${CUDY_DIR}/sh/diy-part1.sh" \
+            "${OPENWRT_DIR}/diy-part1.sh"
+
+          cp -av \
+            "${CUDY_DIR}/sh/diy-part2.sh" \
+            "${OPENWRT_DIR}/diy-part2.sh"
+
+          echo
+          echo "======================================"
+          echo "Deployment completed successfully."
+          echo "======================================"
+
+      # ==========================================================
+      # 7. 验证复制结果
+      # ==========================================================
+      - name: Verify custom files
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "Verify custom files"
+          echo "======================================"
+
+          echo
+          echo "===== CONFIG ====="
+          test -f \
+            "${OPENWRT_DIR}/.config"
+
+          ls -lh \
+            "${OPENWRT_DIR}/.config"
+
+          echo
+          echo "===== DIY SCRIPTS ====="
+
+          test -f \
+            "${OPENWRT_DIR}/diy-part1.sh"
+
+          test -f \
+            "${OPENWRT_DIR}/diy-part2.sh"
+
+          ls -lh \
+            "${OPENWRT_DIR}/diy-part1.sh" \
+            "${OPENWRT_DIR}/diy-part2.sh"
+
+          echo
+          echo "===== DTS ====="
+
+          find \
+            "${OPENWRT_DIR}/target/linux/mediatek/dts" \
+            -type f \
+            | sort
+
+          echo
+          echo "===== PACKAGE ====="
+
+          find \
+            "${OPENWRT_DIR}/package" \
+            -maxdepth 4 \
+            -type f \
+            | sort
+
+      # ==========================================================
+      # 8. 执行 DIY Part 1 / Part 2
+      # ==========================================================
+      - name: Run Cudy DIY scripts
+        run: |
+          set -e
+
+          echo "======================================"
+          echo "Run Cudy DIY scripts"
+          echo "======================================"
+
+          echo
+          echo "OPENWRT_DIR=${OPENWRT_DIR}"
+
+          echo
+          echo "===== Check scripts ====="
+
+          ls -lah \
+            "${OPENWRT_DIR}/diy-part1.sh" \
+            "${OPENWRT_DIR}/diy-part2.sh"
+
+          chmod +x \
+            "${OPENWRT_DIR}/diy-part1.sh" \
+            "${OPENWRT_DIR}/diy-part2.sh"
+
+          echo
+          echo "===== Run DIY Part 1 ====="
+
+          cd "${OPENWRT_DIR}"
+
+          bash ./diy-part1.sh
+
+          echo
+          echo "===== Run DIY Part 2 ====="
+
+          bash ./diy-part2.sh
+
+          echo
+          echo "===== DIY completed ====="
+
+      # ==========================================================
+      # 9. 更新 feeds
+      # ==========================================================
+      - name: Update feeds
+        run: |
+          set -e
+
+          cd "${OPENWRT_DIR}"
+
+          echo "======================================"
+          echo "Update feeds"
+          echo "======================================"
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      # ==========================================================
+      # 10. 检查配置
+      # ==========================================================
+      - name: Check configuration
+        run: |
+          set -e
+
+          cd "${OPENWRT_DIR}"
+
+          echo "======================================"
+          echo "Check configuration"
+          echo "======================================"
+
+          test -f .config
+
+          echo
+          echo "===== Target configuration ====="
+
+          grep -E \
+            'CONFIG_TARGET_|CONFIG_TARGET_ARCH_PACKAGES' \
+            .config \
             || true
 
           echo
+          echo "===== QLB-4Pro / MT7981 ====="
+
+          grep -Ei \
+            'QLB|4Pro|MT7981' \
+            .config \
+            || true
+
+      # ==========================================================
+      # 11. 生成最终配置
+      # ==========================================================
+      - name: Generate defconfig
+        run: |
+          set -e
+
+          cd "${OPENWRT_DIR}"
+
           echo "======================================"
-          echo "Firmware files"
+          echo "Generate defconfig"
           echo "======================================"
 
-          find firmware \
+          make defconfig
+
+      # ==========================================================
+      # 12. 编译
+      # ==========================================================
+      - name: Build firmware
+        run: |
+          set -e
+
+          cd "${OPENWRT_DIR}"
+
+          echo "======================================"
+          echo "Build ImmortalWrt"
+          echo "======================================"
+
+          echo "CPU:"
+          nproc
+
+          echo
+          echo "Starting build..."
+
+          make -j$(nproc) V=s
+
+      # ==========================================================
+      # 13. 查看编译结果
+      # ==========================================================
+      - name: Check firmware output
+        run: |
+          set -e
+
+          cd "${OPENWRT_DIR}"
+
+          echo "======================================"
+          echo "Firmware output"
+          echo "======================================"
+
+          if [ ! -d bin/targets ]; then
+            echo "ERROR: bin/targets does not exist."
+            exit 1
+          fi
+
+          find \
+            bin/targets \
             -type f \
-            -printf '%p\n' \
             | sort
 
-
-      # ============================================================
-      # 15. 生成 SHA256
-      # ============================================================
-
-      - name: Generate SHA256
-        if: success()
-        run: |
-          cd firmware
-
-          sha256sum \
-            $(find . -type f) \
-            > sha256sums.txt
-
-          cat sha256sums.txt
-
-
-      # ============================================================
-      # 16. 上传固件 Artifact
-      # ============================================================
-
+      # ==========================================================
+      # 14. 上传固件
+      # ==========================================================
       - name: Upload firmware
-        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: QLB-4Pro--${{ github.run_number }}
-          path: firmware/
-          if-no-files-found: error
-          compression-level: 6
-          retention-days: 30
-
-
-      # ============================================================
-      # 17. 上传编译日志
-      # ============================================================
-
-      - name: Upload build log
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: QLB-4Pro-build-log-${{ github.run_number }}
+          name: ImmortalWrt-MT7981-QLB-4Pro
           path: |
-            openwrt/build.log
-          if-no-files-found: ignore
+            ${{ env.OPENWRT_DIR }}/bin/targets/**
+          if-no-files-found: error
           retention-days: 7
