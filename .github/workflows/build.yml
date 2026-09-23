@@ -25,7 +25,7 @@ jobs:
       OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
       OPENWRT_BRANCH: openwrt-24.10-6.6
 
-      CUDY_REPO: https://github.com/J260121/cudy-tr3000_128M-512M.git
+      CUDY_REPO: https://github.com/J260121/ubi_build.git
 
       OPENWRT_DIR: openwrt
       CUDY_DIR: cudy
