@@ -30,8 +30,6 @@ jobs:
       OPENWRT_DIR: openwrt
       CUDY_DIR: cudy
       
-      DIY_P1: diy-part1.sh
-      DIY_P2: diy-part2.sh
     steps:
 
       # ============================================================
@@ -251,17 +249,21 @@ jobs:
       - name: Apply Cudy build modifications
         run: |
           set -e
-
-          cd "${OPENWRT_DIR}"
+          DIY_P1="${OPENWRT_DIR}/diy-part1.sh"
+          DIY_P2="${OPENWRT_DIR}/diy-part2.sh"
           
-          chmod +x diy-part1.sh diy-part2.sh
+          echo "DIY_P1=${DIY_P1}"
+          echo "DIY_P2=${DIY_P2}"
+          
+          ls -lh "${DIY_P1}" "${DIY_P2}"
+          
+          chmod +x "${DIY_P1}" "${DIY_P2}"
           
           echo "===== Run DIY Part 1 ====="
-          ./diy-part1.sh
+          bash "${DIY_P1}"
           
           echo "===== Run DIY Part 2 ====="
-          ./diy-part2.sh
-          
+          bash "${DIY_P2}"          
           echo "===== DIY completed ====="
 
 
