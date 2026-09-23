@@ -245,31 +245,7 @@ jobs:
             
             echo "Deployment completed successfully."
       # ============================================================
-      # 000. Current directory
-      # ============================================================
-      - name: Current directory
-        run: |
-          set -e      
-            echo "===== Current directory ====="
-            pwd
-              echo "===== CUDY_DIR ====="
-              echo "${CUDY_DIR}"
-              
-              echo "===== Find DIY scripts ====="
-              find "${CUDY_DIR}" -type f \( \
-                -name "diy-part1.sh" -o \
-                -name "diy-part2.sh" \
-              \) -print
-              
-              echo "===== OpenWrt DIY scripts ====="
-              find "${OPENWRT_DIR}" -maxdepth 2 -type f \( \
-                -name "diy-part1.sh" -o \
-                -name "diy-part2.sh" \
-              \) -print
-      
-      
-      # ============================================================
-      # 8. 执行 Cudy DIY part 2
+      # 8. 执行 DIY part
       # ============================================================
 
       - name: Apply Cudy build modifications
@@ -277,28 +253,17 @@ jobs:
           set -e
 
           cd "${OPENWRT_DIR}"
-
-          echo "===== Check scripts ====="
-          ls -lah diy-part*.sh
-      
+          
           chmod +x diy-part1.sh diy-part2.sh
-      
-          echo "===== Run diy-part1.sh ====="
+          
+          echo "===== Run DIY Part 1 ====="
           ./diy-part1.sh
-      
-          echo "===== Run diy-part2.sh ====="
+          
+          echo "===== Run DIY Part 2 ====="
           ./diy-part2.sh
-          # --------------------------------------------------------
-          # Rust
-          # --------------------------------------------------------
+          
+          echo "===== DIY completed ====="
 
-          if [ -f feeds/packages/lang/rust/Makefile ]; then
-
-            sed -i \
-              's/ci-llvm=true/ci-llvm=false/g' \
-              feeds/packages/lang/rust/Makefile
-
-          fi
 
 
           # --------------------------------------------------------
