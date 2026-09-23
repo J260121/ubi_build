@@ -1,57 +1,69 @@
 
-name: Build ImmortalWrt MT7981 QLB-4Pro
+name: Build ImmortalWrt MT7981 Cudy
 
 on:
   workflow_dispatch:
+    inputs:
+      extra_packages:
+        description: "额外软件包，空格分隔"
+        required: false
+        default: "luci-app-ttyd curl wget-ssl htop nano bash ca-bundle"
 
-permissions:
-  contents: write
+      clean_build:
+        description: "清理旧的 OpenWrt 编译目录"
+        required: true
+        type: boolean
+        default: true
 
 env:
-  # ============================================================
+  TZ: Asia/Shanghai
+
+  # =========================================================
   # 源码
-  # ============================================================
-  OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
-  OPENWRT_BRANCH: openwrt-24.10-6.6
+  # =========================================================
 
   CUDY_REPO: https://github.com/J260121/ubi_build.git
 
-  # ============================================================
-  # 目录
-  #
-  # github.workspace:
-  # /home/runner/work/ubi_build/ubi_build
-  #
-  # 所以 ../ 就是：
-  # /home/runner/work/ubi_build
-  #
-  # 最终：
-  # /home/runner/work/ubi_build/
-  # ├── ubi_build/
-  # ├── cudy/
-  # └── openwrt/
-  # ============================================================
-  ROOT_DIR: ${{ github.workspace }}/..
+  OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
 
-  CUDY_DIR: ${{ github.workspace }}/../cudy
-  OPENWRT_DIR: ${{ github.workspace }}/../openwrt
+  OPENWRT_BRANCH: openwrt-24.10-6.6
+
+  # =========================================================
+  # 工作目录
+  #
+  # 当前 GitHub Actions 仓库：
+  #
+  # /home/runner/work/仓库名/仓库名
+  #
+  # 所以 ../ 就是同级工作目录
+  # =========================================================
+
+  BUILD_ROOT: ${{ github.workspace }}/..
 
 jobs:
+
   build:
-    runs-on: ubuntu-24.04
+
+    runs-on: ubuntu-22.04
 
     steps:
 
-      # ==========================================================
-      # 1. Checkout 当前仓库
-      # ==========================================================
+      # =======================================================
+      # 0. 拉取当前 GitHub Actions 仓库
+      # =======================================================
+
       - name: Checkout workflow repository
         uses: actions/checkout@v4
 
-      # ==========================================================
-      # 2. 安装编译依赖
-      # ==========================================================
+
+      # =======================================================
+      # 1. 安装编译环境
+      #
+      # 这是编译环境准备，不改变后面的源码处理顺序
+      # =======================================================
+
       - name: Install build dependencies
+        shell: bash
         run: |
           set -e
 
@@ -69,373 +81,958 @@ jobs:
             gettext \
             git \
             libncurses5-dev \
-            libncursesw5-dev \
+            libncurses-dev \
             libssl-dev \
             python3 \
-            python3-setuptools \
             python3-distutils \
+            python3-setuptools \
             rsync \
             unzip \
             zlib1g-dev \
             file \
             wget \
             curl \
+            rename \
             xsltproc \
             swig \
             time \
-            quilt \
+            jq \
+            zip \
+            p7zip-full \
+            libelf-dev \
             ccache
 
-      # ==========================================================
-      # 3. Clone Cudy
+          sudo timedatectl set-timezone "${TZ}" || true
+
+
+      # =======================================================
+      # 2. 拉取源码
       #
-      # https://github.com/J260121/ubi_build.git
+      # cudy:
       #
-      # 目标：
-      # /home/runner/work/ubi_build/cudy
-      # ==========================================================
-      - name: Clone Cudy source
+      # J260121/ubi_build.git
+      #
+      # openwrt:
+      #
+      # padavanonly/immortalwrt-mt798x-6.6
+      # =======================================================
+
+      - name: 1. 拉取源码
+        shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "Clone Cudy source"
-          echo "======================================"
+          ROOT_DIR="${BUILD_ROOT}"
 
+          CUDY_DIR="${ROOT_DIR}/cudy"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+
+          echo "=================================================="
+          echo "拉取源码"
+          echo "=================================================="
+
+          echo "ROOT_DIR    = ${ROOT_DIR}"
+          echo "CUDY_DIR    = ${CUDY_DIR}"
+          echo "OPENWRT_DIR = ${OPENWRT_DIR}"
+
+          # 清理旧源码
           rm -rf "${CUDY_DIR}"
+          rm -rf "${OPENWRT_DIR}"
+
+          mkdir -p "${ROOT_DIR}"
+
+          # ---------------------------------------------------
+          # 拉取 J260121/ubi_build.git
+          #
+          # 整个仓库直接放入 cudy
+          #
+          # 不会产生：
+          #
+          # cudy/ubi_build/
+          #
+          # ---------------------------------------------------
+
+          echo
+          echo ">>> Clone J260121/ubi_build.git"
 
           git clone \
             --depth=1 \
             "${CUDY_REPO}" \
             "${CUDY_DIR}"
 
-          echo
-          echo "CUDY_DIR=${CUDY_DIR}"
+          # ---------------------------------------------------
+          # 拉取 ImmortalWrt
+          # ---------------------------------------------------
 
           echo
-          echo "===== Cudy files ====="
-          find "${CUDY_DIR}" \
-            -maxdepth 4 \
-            -type f \
-            | sort
-
-      # ==========================================================
-      # 4. Clone ImmortalWrt
-      #
-      # 目标：
-      # /home/runner/work/ubi_build/openwrt
-      # ==========================================================
-      - name: Clone ImmortalWrt
-        run: |
-          set -e
-
-          echo "======================================"
-          echo "Clone ImmortalWrt"
-          echo "======================================"
-
-          rm -rf "${OPENWRT_DIR}"
+          echo ">>> Clone ImmortalWrt"
 
           git clone \
             --depth=1 \
+            --single-branch \
             --branch "${OPENWRT_BRANCH}" \
             "${OPENWRT_REPO}" \
             "${OPENWRT_DIR}"
 
           echo
-          echo "OPENWRT_DIR=${OPENWRT_DIR}"
+          echo "=================================================="
+          echo "源码拉取完成"
+          echo "=================================================="
 
-      # ==========================================================
-      # 5. 检查目录结构
-      # ==========================================================
-      - name: Check directory structure
+          echo
+          echo "----- cudy -----"
+
+          ls -la "${CUDY_DIR}"
+
+          echo
+          echo "----- openwrt -----"
+
+          ls -la "${OPENWRT_DIR}"
+
+          echo
+          echo "----- cudy 文件 -----"
+
+          find "${CUDY_DIR}" \
+            -maxdepth 3 \
+            -type f \
+            -not -path '*/.git/*' \
+            | sort
+
+
+      # =======================================================
+      # 3. 复制到工作目录
+      #
+      # 把 cudy 中的：
+      #
+      # config
+      # dts
+      # package
+      # sh
+      #
+      # 复制到 openwrt
+      # =======================================================
+
+      - name: 2. 复制 Cudy 文件到工作目录
+        shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "Directory structure"
-          echo "======================================"
+          ROOT_DIR="${BUILD_ROOT}"
 
-          echo
-          echo "===== ROOT ====="
-          ls -lah "${ROOT_DIR}"
+          CUDY_DIR="${ROOT_DIR}/cudy"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
 
-          echo
-          echo "===== CUDY ====="
-          ls -lah "${CUDY_DIR}"
+          echo "=================================================="
+          echo "复制 Cudy 文件到 OpenWrt 工作目录"
+          echo "=================================================="
 
-          echo
-          echo "===== OPENWRT ====="
-          ls -lah "${OPENWRT_DIR}"
+          # ---------------------------------------------------
+          # config
+          # ---------------------------------------------------
 
-      # ==========================================================
-      # 6. 复制 DTS / package / config / sh
-      # ==========================================================
-      - name: Copy Cudy custom files
-        run: |
-          set -e
+          CONFIG_FILE="${CUDY_DIR}/config/mt7981-QLB-4Pro.config"
 
-          echo "======================================"
-          echo "Copy Cudy custom files"
-          echo "======================================"
+          if [ -f "${CONFIG_FILE}" ]; then
 
-          # ------------------------------------------------------
+            echo "复制设备配置："
+            echo "${CONFIG_FILE}"
+
+            cp -f \
+              "${CONFIG_FILE}" \
+              "${OPENWRT_DIR}/.config"
+
+          else
+
+            echo "ERROR:"
+            echo "找不到设备配置："
+            echo "${CONFIG_FILE}"
+
+            exit 1
+
+          fi
+
+
+          # ---------------------------------------------------
           # DTS
-          # ------------------------------------------------------
-          echo
-          echo "Copying DTS files..."
+          # ---------------------------------------------------
 
-          mkdir -p \
-            "${OPENWRT_DIR}/target/linux/mediatek/dts"
+          if [ -d "${CUDY_DIR}/dts" ]; then
 
-          cp -av \
-            "${CUDY_DIR}/dts/." \
-            "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+            echo
+            echo "复制 DTS..."
 
-          # ------------------------------------------------------
-          # Package
-          # ------------------------------------------------------
-          echo
-          echo "Copying packages..."
+            mkdir -p \
+              "${OPENWRT_DIR}/target/linux/mediatek/dts"
 
-          mkdir -p \
-            "${OPENWRT_DIR}/package"
+            cp -a \
+              "${CUDY_DIR}/dts/." \
+              "${OPENWRT_DIR}/target/linux/mediatek/dts/"
 
-          cp -av \
-            "${CUDY_DIR}/package/." \
-            "${OPENWRT_DIR}/package/"
+          fi
 
-          # ------------------------------------------------------
-          # Config
-          # ------------------------------------------------------
-          echo
-          echo "Copying config..."
 
-          cp -av \
-            "${CUDY_DIR}/config/mt7981-QLB-4Pro.config" \
-            "${OPENWRT_DIR}/.config"
+          # ---------------------------------------------------
+          # package
+          # ---------------------------------------------------
 
-          # ------------------------------------------------------
-          # DIY scripts
-          # ------------------------------------------------------
-          echo
-          echo "Copying shell scripts..."
+          if [ -d "${CUDY_DIR}/package" ]; then
 
-          cp -av \
-            "${CUDY_DIR}/sh/diy-part1.sh" \
-            "${OPENWRT_DIR}/diy-part1.sh"
+            echo
+            echo "复制自定义 package..."
 
-          cp -av \
-            "${CUDY_DIR}/sh/diy-part2.sh" \
-            "${OPENWRT_DIR}/diy-part2.sh"
+            mkdir -p \
+              "${OPENWRT_DIR}/package"
 
-          echo
-          echo "======================================"
-          echo "Deployment completed successfully."
-          echo "======================================"
+            cp -a \
+              "${CUDY_DIR}/package/." \
+              "${OPENWRT_DIR}/package/"
 
-      # ==========================================================
-      # 7. 验证复制结果
-      # ==========================================================
-      - name: Verify custom files
-        run: |
-          set -e
+          fi
 
-          echo "======================================"
-          echo "Verify custom files"
-          echo "======================================"
+
+          # ---------------------------------------------------
+          # sh
+          #
+          # 只复制 sh 目录中的文件到 OpenWrt 根目录
+          # ---------------------------------------------------
+
+          if [ -d "${CUDY_DIR}/sh" ]; then
+
+            echo
+            echo "复制 sh 脚本..."
+
+            cp -a \
+              "${CUDY_DIR}/sh/." \
+              "${OPENWRT_DIR}/"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 检查复制结果
+          # ---------------------------------------------------
 
           echo
-          echo "===== CONFIG ====="
-          test -f \
-            "${OPENWRT_DIR}/.config"
+          echo "=================================================="
+          echo "复制结果"
+          echo "=================================================="
+
+          echo
+          echo "----- .config -----"
 
           ls -lh \
             "${OPENWRT_DIR}/.config"
 
-          echo
-          echo "===== DIY SCRIPTS ====="
-
-          test -f \
-            "${OPENWRT_DIR}/diy-part1.sh"
-
-          test -f \
-            "${OPENWRT_DIR}/diy-part2.sh"
-
-          ls -lh \
-            "${OPENWRT_DIR}/diy-part1.sh" \
-            "${OPENWRT_DIR}/diy-part2.sh"
 
           echo
-          echo "===== DTS ====="
+          echo "----- DTS -----"
 
           find \
             "${OPENWRT_DIR}/target/linux/mediatek/dts" \
+            -maxdepth 1 \
             -type f \
             | sort
 
+
           echo
-          echo "===== PACKAGE ====="
+          echo "----- package -----"
 
           find \
             "${OPENWRT_DIR}/package" \
             -maxdepth 4 \
             -type f \
+            -name Makefile \
             | sort
 
-      # ==========================================================
-      # 8. 执行 DIY Part 1 / Part 2
-      # ==========================================================
-      - name: Run Cudy DIY scripts
+
+          echo
+          echo "----- scripts -----"
+
+          ls -lh \
+            "${OPENWRT_DIR}/diy-part1.sh" \
+            "${OPENWRT_DIR}/diy-part2.sh" \
+            2>/dev/null || true
+
+
+      # =======================================================
+      # 4. 执行 SH 脚本
+      #
+      # 顺序：
+      #
+      # diy-part1.sh
+      # ↓
+      # diy-part2.sh
+      # =======================================================
+
+      - name: 3. 执行 DIY 脚本
+        shell: bash
         run: |
           set -e
 
-          echo "======================================"
-          echo "Run Cudy DIY scripts"
-          echo "======================================"
-
-          echo
-          echo "OPENWRT_DIR=${OPENWRT_DIR}"
-
-          echo
-          echo "===== Check scripts ====="
-
-          ls -lah \
-            "${OPENWRT_DIR}/diy-part1.sh" \
-            "${OPENWRT_DIR}/diy-part2.sh"
-
-          chmod +x \
-            "${OPENWRT_DIR}/diy-part1.sh" \
-            "${OPENWRT_DIR}/diy-part2.sh"
-
-          echo
-          echo "===== Run DIY Part 1 ====="
+          ROOT_DIR="${BUILD_ROOT}"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
 
           cd "${OPENWRT_DIR}"
 
-          bash ./diy-part1.sh
+          echo "=================================================="
+          echo "执行 DIY 脚本"
+          echo "=================================================="
+
+
+          # ---------------------------------------------------
+          # diy-part1.sh
+          # ---------------------------------------------------
+
+          if [ -f "./diy-part1.sh" ]; then
+
+            echo
+            echo ">>> 执行 diy-part1.sh"
+
+            chmod +x ./diy-part1.sh
+
+            bash ./diy-part1.sh
+
+          else
+
+            echo
+            echo "WARNING: diy-part1.sh 不存在"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # diy-part2.sh
+          # ---------------------------------------------------
+
+          if [ -f "./diy-part2.sh" ]; then
+
+            echo
+            echo ">>> 执行 diy-part2.sh"
+
+            chmod +x ./diy-part2.sh
+
+            bash ./diy-part2.sh
+
+          else
+
+            echo
+            echo "WARNING: diy-part2.sh 不存在"
+
+          fi
+
 
           echo
-          echo "===== Run DIY Part 2 ====="
+          echo "=================================================="
+          echo "DIY 脚本执行完成"
+          echo "=================================================="
 
-          bash ./diy-part2.sh
 
-          echo
-          echo "===== DIY completed ====="
+      # =======================================================
+      # 5. 引入额外软件包
+      #
+      # 例如：
+      #
+      # luci-app-ttyd
+      # curl
+      # wget-ssl
+      # htop
+      # nano
+      #
+      # 通过 workflow_dispatch 输入
+      # =======================================================
 
-      # ==========================================================
-      # 9. 更新 feeds
-      # ==========================================================
-      - name: Update feeds
+      - name: 4. 引入额外软件包
+        shell: bash
+        env:
+          INPUT_EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
         run: |
           set -e
 
+          ROOT_DIR="${BUILD_ROOT}"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+
           cd "${OPENWRT_DIR}"
 
-          echo "======================================"
-          echo "Update feeds"
-          echo "======================================"
+
+          echo "=================================================="
+          echo "引入额外软件包"
+          echo "=================================================="
+
+
+          # ---------------------------------------------------
+          # 如果用户没有输入，则使用默认软件包
+          # ---------------------------------------------------
+
+          EXTRA_PACKAGES="${INPUT_EXTRA_PACKAGES}"
+
+          if [ -z "${EXTRA_PACKAGES}" ]; then
+
+            EXTRA_PACKAGES="
+            luci-app-ttyd
+            curl
+            wget-ssl
+            htop
+            nano
+            bash
+            ca-bundle
+            "
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 整理空白
+          # ---------------------------------------------------
+
+          EXTRA_PACKAGES="$(echo "${EXTRA_PACKAGES}" | xargs)"
+
+
+          echo
+          echo "额外软件包："
+          echo "${EXTRA_PACKAGES}"
+
+
+          # 保存给后续步骤
+          echo "EXTRA_PACKAGES=${EXTRA_PACKAGES}" >> "${GITHUB_ENV}"
+
+
+          # ---------------------------------------------------
+          # feeds
+          #
+          # 额外软件包需要先安装 feeds
+          # ---------------------------------------------------
+
+          echo
+          echo ">>> 更新 feeds"
 
           ./scripts/feeds update -a
+
+          echo
+          echo ">>> 安装 feeds"
+
           ./scripts/feeds install -a
 
-      # ==========================================================
-      # 10. 检查配置
-      # ==========================================================
-      - name: Check configuration
+
+          # ---------------------------------------------------
+          # 处理额外软件包
+          # ---------------------------------------------------
+
+          for PKG in ${EXTRA_PACKAGES}; do
+
+            echo
+            echo "----------------------------------------"
+            echo "处理软件包：${PKG}"
+            echo "----------------------------------------"
+
+
+            # 检查 package 是否存在
+            if ./scripts/feeds search "${PKG}" | grep -q "${PKG}"; then
+
+              echo "找到软件包：${PKG}"
+
+            elif find package feeds \
+                -type d \
+                -name "${PKG}" \
+                2>/dev/null | grep -q .; then
+
+              echo "找到本地软件包：${PKG}"
+
+            else
+
+              echo "WARNING: 未找到软件包：${PKG}"
+
+            fi
+
+
+            # -------------------------------------------------
+            # 写入 .config
+            # -------------------------------------------------
+
+            CONFIG_NAME="CONFIG_PACKAGE_${PKG}"
+
+
+            # 删除旧配置
+            sed -i \
+              "/^${CONFIG_NAME}=y$/d" \
+              .config
+
+            sed -i \
+              "/^# ${CONFIG_NAME} is not set$/d" \
+              .config
+
+
+            # 写入
+            echo "${CONFIG_NAME}=y" >> .config
+
+          done
+
+
+          echo
+          echo "=================================================="
+          echo "额外软件包引入完成"
+          echo "=================================================="
+
+
+      # =======================================================
+      # 6. 生成最终配置
+      #
+      # make defconfig 会根据：
+      #
+      # DTS
+      # package
+      # feeds
+      # diy 脚本
+      # 额外软件包
+      #
+      # 生成最终 .config
+      # =======================================================
+
+      - name: 5. 生成最终配置
+        shell: bash
         run: |
           set -e
 
-          cd "${OPENWRT_DIR}"
-
-          echo "======================================"
-          echo "Check configuration"
-          echo "======================================"
-
-          test -f .config
-
-          echo
-          echo "===== Target configuration ====="
-
-          grep -E \
-            'CONFIG_TARGET_|CONFIG_TARGET_ARCH_PACKAGES' \
-            .config \
-            || true
-
-          echo
-          echo "===== QLB-4Pro / MT7981 ====="
-
-          grep -Ei \
-            'QLB|4Pro|MT7981' \
-            .config \
-            || true
-
-      # ==========================================================
-      # 11. 生成最终配置
-      # ==========================================================
-      - name: Generate defconfig
-        run: |
-          set -e
+          ROOT_DIR="${BUILD_ROOT}"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
 
           cd "${OPENWRT_DIR}"
 
-          echo "======================================"
-          echo "Generate defconfig"
-          echo "======================================"
+          echo "=================================================="
+          echo "生成最终配置"
+          echo "=================================================="
+
+
+          # ---------------------------------------------------
+          # 生成配置
+          # ---------------------------------------------------
 
           make defconfig
 
-      # ==========================================================
-      # 12. 编译
-      # ==========================================================
-      - name: Build firmware
+
+          # ---------------------------------------------------
+          # 检查目标平台
+          # ---------------------------------------------------
+
+          echo
+          echo "=================================================="
+          echo "目标平台"
+          echo "=================================================="
+
+          grep \
+            -E '^CONFIG_TARGET_' \
+            .config \
+            | grep '=y' \
+            || true
+
+
+          # ---------------------------------------------------
+          # 检查额外软件包
+          # ---------------------------------------------------
+
+          echo
+          echo "=================================================="
+          echo "额外软件包最终配置"
+          echo "=================================================="
+
+
+          for PKG in ${EXTRA_PACKAGES}; do
+
+            CONFIG_NAME="CONFIG_PACKAGE_${PKG}"
+
+            if grep -q "^${CONFIG_NAME}=y$" .config; then
+
+              echo "OK     ${PKG}"
+
+            else
+
+              echo "MISS   ${PKG}"
+
+            fi
+
+          done
+
+
+          # ---------------------------------------------------
+          # 保存最终配置
+          # ---------------------------------------------------
+
+          mkdir -p \
+            "${ROOT_DIR}/firmware"
+
+          cp -f \
+            .config \
+            "${ROOT_DIR}/firmware/defconfig"
+
+
+          echo
+          echo "最终配置生成完成。"
+
+
+      # =======================================================
+      # 7. 开始编译
+      # =======================================================
+
+      - name: 6. 开始编译
+        shell: bash
         run: |
           set -e
 
+          ROOT_DIR="${BUILD_ROOT}"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+
           cd "${OPENWRT_DIR}"
 
-          echo "======================================"
-          echo "Build ImmortalWrt"
-          echo "======================================"
+
+          echo "=================================================="
+          echo "开始编译"
+          echo "=================================================="
 
           echo "CPU:"
           nproc
 
           echo
-          echo "Starting build..."
+          echo "开始下载编译依赖..."
 
-          make -j$(nproc) V=s
 
-      # ==========================================================
-      # 13. 查看编译结果
-      # ==========================================================
-      - name: Check firmware output
+          # ---------------------------------------------------
+          # 下载源码包
+          # ---------------------------------------------------
+
+          make download \
+            -j"$(nproc)" \
+            V=s
+
+
+          # ---------------------------------------------------
+          # 开始编译
+          # ---------------------------------------------------
+
+          echo
+          echo "开始编译固件..."
+
+
+          START_TIME="$(date +%s)"
+
+          echo "BUILD_START_TIME=${START_TIME}" >> "${GITHUB_ENV}"
+
+
+          make \
+            -j"$(nproc)" \
+            V=s
+
+
+          END_TIME="$(date +%s)"
+
+          echo "BUILD_END_TIME=${END_TIME}" >> "${GITHUB_ENV}"
+
+
+          BUILD_SECONDS=$((END_TIME - START_TIME))
+
+          echo "BUILD_SECONDS=${BUILD_SECONDS}" >> "${GITHUB_ENV}"
+
+
+          echo
+          echo "=================================================="
+          echo "编译完成"
+          echo "=================================================="
+
+          echo "编译耗时：${BUILD_SECONDS} 秒"
+
+
+      # =======================================================
+      # 8. 生成编译信息
+      #
+      # 无论编译成功还是失败，都执行
+      # =======================================================
+
+      - name: 7. 生成编译信息
+        if: always()
+        shell: bash
         run: |
           set -e
 
-          cd "${OPENWRT_DIR}"
+          ROOT_DIR="${BUILD_ROOT}"
+          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+          FIRMWARE_DIR="${ROOT_DIR}/firmware"
 
-          echo "======================================"
-          echo "Firmware output"
-          echo "======================================"
+          mkdir -p "${FIRMWARE_DIR}"
 
-          if [ ! -d bin/targets ]; then
-            echo "ERROR: bin/targets does not exist."
-            exit 1
+
+          echo "=================================================="
+          echo "生成编译信息"
+          echo "=================================================="
+
+
+          # ---------------------------------------------------
+          # GitHub 信息
+          # ---------------------------------------------------
+
+          cat > "${FIRMWARE_DIR}/build-info.txt" <<EOF
+============================================================
+ImmortalWrt MT7981 Cudy Build Information
+============================================================
+
+GitHub Repository:
+${GITHUB_REPOSITORY}
+
+GitHub Run:
+${GITHUB_RUN_NUMBER}
+
+GitHub SHA:
+${GITHUB_SHA}
+
+GitHub Ref:
+${GITHUB_REF}
+
+Workflow:
+${GITHUB_WORKFLOW}
+
+Runner:
+${RUNNER_OS}
+
+Build Time:
+$(date '+%Y-%m-%d %H:%M:%S %Z')
+
+============================================================
+Source
+============================================================
+
+Cudy Source:
+${CUDY_REPO}
+
+OpenWrt Source:
+${OPENWRT_REPO}
+
+OpenWrt Branch:
+${OPENWRT_BRANCH}
+
+============================================================
+Extra Packages
+============================================================
+
+${EXTRA_PACKAGES}
+
+============================================================
+Build Result
+============================================================
+
+EOF
+
+
+          # ---------------------------------------------------
+          # Cudy Git 信息
+          # ---------------------------------------------------
+
+          if [ -d "${ROOT_DIR}/cudy/.git" ]; then
+
+            echo "Cudy Commit:" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            git \
+              -C "${ROOT_DIR}/cudy" \
+              rev-parse HEAD \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            echo \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
           fi
 
-          find \
-            bin/targets \
-            -type f \
-            | sort
 
-      # ==========================================================
-      # 14. 上传固件
-      # ==========================================================
-      - name: Upload firmware
+          # ---------------------------------------------------
+          # OpenWrt Git 信息
+          # ---------------------------------------------------
+
+          if [ -d "${OPENWRT_DIR}/.git" ]; then
+
+            echo "OpenWrt Commit:" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            git \
+              -C "${OPENWRT_DIR}" \
+              rev-parse HEAD \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            echo \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 编译状态
+          # ---------------------------------------------------
+
+          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
+
+            echo "Firmware build directory: OK" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+          else
+
+            echo "Firmware build directory: NOT FOUND" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 编译时间
+          # ---------------------------------------------------
+
+          if [ -n "${BUILD_SECONDS:-}" ]; then
+
+            echo \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            echo "Build Duration:" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+            echo "${BUILD_SECONDS} seconds" \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 文件信息
+          # ---------------------------------------------------
+
+          echo \
+            >> "${FIRMWARE_DIR}/build-info.txt"
+
+          echo "============================================================" \
+            >> "${FIRMWARE_DIR}/build-info.txt"
+
+          echo "Firmware Files" \
+            >> "${FIRMWARE_DIR}/build-info.txt"
+
+          echo "============================================================" \
+            >> "${FIRMWARE_DIR}/build-info.txt"
+
+
+          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
+
+            find \
+              "${OPENWRT_DIR}/bin/targets" \
+              -type f \
+              -printf '%p\t%k KB\n' \
+              | sort \
+              >> "${FIRMWARE_DIR}/build-info.txt"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 复制固件
+          # ---------------------------------------------------
+
+          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
+
+            echo
+            echo "复制最终固件..."
+
+            cp -a \
+              "${OPENWRT_DIR}/bin/targets/." \
+              "${FIRMWARE_DIR}/"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 保存最终 .config
+          # ---------------------------------------------------
+
+          if [ -f "${OPENWRT_DIR}/.config" ]; then
+
+            cp -f \
+              "${OPENWRT_DIR}/.config" \
+              "${FIRMWARE_DIR}/.config"
+
+          fi
+
+
+          # ---------------------------------------------------
+          # 保存 feeds 配置
+          # ---------------------------------------------------
+
+          if [ -f "${OPENWRT_DIR}/feeds.conf.default" ]; then
+
+            cp -f \
+              "${OPENWRT_DIR}/feeds.conf.default" \
+              "${FIRMWARE_DIR}/feeds.conf.default"
+
+          fi
+
+
+          echo
+          echo "=================================================="
+          echo "编译信息"
+          echo "=================================================="
+
+          cat \
+            "${FIRMWARE_DIR}/build-info.txt"
+
+
+      # =======================================================
+      # 9. 输出固件列表
+      # =======================================================
+
+      - name: Show firmware files
+        if: always()
+        shell: bash
+        run: |
+          set -e
+
+          ROOT_DIR="${BUILD_ROOT}"
+          FIRMWARE_DIR="${ROOT_DIR}/firmware"
+
+          echo "=================================================="
+          echo "最终文件"
+          echo "=================================================="
+
+          if [ -d "${FIRMWARE_DIR}" ]; then
+
+            find \
+              "${FIRMWARE_DIR}" \
+              -type f \
+              -printf '%p\t%k KB\n' \
+              | sort
+
+          else
+
+            echo "firmware 目录不存在"
+
+          fi
+
+
+      # =======================================================
+      # 10. 上传最终固件和编译信息
+      # =======================================================
+
+      - name: Upload firmware and build information
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ImmortalWrt-MT7981-QLB-4Pro
+          name: immortalwrt-mt7981-cudy-${{ github.run_number }}
           path: |
-            ${{ env.OPENWRT_DIR }}/bin/targets/**
-          if-no-files-found: error
+            ${{ github.workspace }}/../firmware/**
+          if-no-files-found: warn
           retention-days: 7
+
+
+      # =======================================================
+      # 11. 编译失败时上传 OpenWrt 配置和日志
+      # =======================================================
+
+      - name: Upload build logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: immortalwrt-build-logs-${{ github.run_number }}
+          path: |
+            ${{ github.workspace }}/../openwrt/.config
+            ${{ github.workspace }}/../openwrt/tmp/**
+            ${{ github.workspace }}/../openwrt/logs/**
+          if-no-files-found: ignore
+          retention-days: 3
