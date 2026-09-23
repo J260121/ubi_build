@@ -210,11 +210,41 @@ jobs:
       - name: Copy fold
         run: |
           set -e
-          cd
-          cp -f "${CUDY_DIR}/dts/." "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-          cp -f "${CUDY_DIR}/package/." "${OPENWRT_DIR}/package/"
-          cp -f "${CUDY_DIR}/config/mt7981-QLB-4Pro.config" "${OPENWRT_DIR}/.config"
-          cp -f "${CUDY_DIR}/sh/." "${OPENWRT_DIR}/"
+          SRC="${CUDY_DIR}/dts"
+          DST="${OPENWRT_DIR}/target/linux/mediatek/dts"
+          echo "Source: ${SRC}"
+          echo "Target: ${DST}"
+          test -d "${SRC}"
+          mkdir -p "${DST}"
+          cp -av "${SRC}/." "${DST}/"
+          echo
+          echo "======================================"
+          echo "Copy DTS"
+          echo "======================================"
+          find "${DST}" -type f \
+            \( -name '*QLB*' -o -name '*4Pro*' \) \
+            -print | sort
+
+          if [ -d "${CUDY_DIR}/package" ]; then
+            echo "Copy custom packages..."
+
+            cp -av \
+              "${CUDY_DIR}/package/." \
+              "${OPENWRT_DIR}/package/"
+          fi
+            cp -av \
+              "${CUDY_DIR}/config/." \
+              "${OPENWRT_DIR}/config/.config"
+              "${CUDY_DIR}/sh/." \
+              "${OPENWRT_DIR}/"
+
+
+
+          
+      #cp -f "${CUDY_DIR}/dts/." "${OPENWRT_DIR}/target/linux/mediatek/dts/"
+      #cp -f "${CUDY_DIR}/package/." "${OPENWRT_DIR}/package/"
+      #   cp -f "${CUDY_DIR}/config/mt7981-QLB-4Pro.config" "${OPENWRT_DIR}/.config"
+      #  cp -f "${CUDY_DIR}/sh/." "${OPENWRT_DIR}/"
       #cp -f defconfig/mt7981-QLB-4Pro.config .config
       # ============================================================
       # 8. 执行 Cudy DIY part 2
