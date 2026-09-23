@@ -235,7 +235,7 @@ jobs:
             echo "Copying shell scripts..."
             cp -a sh/. "${OPENWRT_DIR}/"
             echo "===== dts ====="
-            find ""${OPENWRT_DIR}/target/linux/mediatek/dts/" -type f | sort
+            find "${OPENWRT_DIR}/target/linux/mediatek/dts/" -type f | sort
             
             echo "===== package ====="
             find "${OPENWRT_DIR}/package/" -type f | sort
