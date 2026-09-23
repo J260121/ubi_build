@@ -352,14 +352,8 @@ jobs:
             2>/dev/null || true
 
 
-      # =======================================================
-      # 3. 执行 SH 脚本
-      #
-      # 先 chmod +x
-      # 再执行脚本
-      # =======================================================
 
-      - name: 3. 给脚本权限并执行 DIY 脚本
+      - name: 3. 执行 DIY 脚本
         shell: bash
         run: |
           set -e
@@ -370,40 +364,24 @@ jobs:
           cd "${OPENWRT_DIR}"
 
           echo "=================================================="
-          echo "给 DIY 脚本添加执行权限"
+          echo "DIY 脚本"
           echo "=================================================="
 
-
           # ---------------------------------------------------
-          # 给所有 sh 脚本执行权限
+          # 给所有 shell 脚本执行权限
           # ---------------------------------------------------
 
-          if [ -f "./diy-part1.sh" ]; then
-            chmod +x ./diy-part1.sh
-            echo "chmod +x diy-part1.sh"
-          fi
-
-          if [ -f "./diy-part2.sh" ]; then
-            chmod +x ./diy-part2.sh
-            echo "chmod +x diy-part2.sh"
-          fi
-
-
-          # ---------------------------------------------------
-          # 显示权限
-          # ---------------------------------------------------
+          find . -maxdepth 1 -type f -name "*.sh" \
+            -exec chmod +x {} \;
 
           echo
-          echo "===== 脚本权限 ====="
+          echo "脚本权限："
 
-          ls -l \
-            ./diy-part1.sh \
-            ./diy-part2.sh \
-            2>/dev/null || true
+          ls -lh *.sh 2>/dev/null || true
 
 
           # ---------------------------------------------------
-          # 执行 diy-part1.sh
+          # DIY PART 1
           # ---------------------------------------------------
 
           if [ -f "./diy-part1.sh" ]; then
@@ -413,7 +391,9 @@ jobs:
             echo "执行 diy-part1.sh"
             echo "=================================================="
 
-            ./diy-part1.sh
+            chmod +x ./diy-part1.sh
+
+            bash -x ./diy-part1.sh
 
           else
 
@@ -423,7 +403,7 @@ jobs:
 
 
           # ---------------------------------------------------
-          # 执行 diy-part2.sh
+          # DIY PART 2
           # ---------------------------------------------------
 
           if [ -f "./diy-part2.sh" ]; then
@@ -433,7 +413,20 @@ jobs:
             echo "执行 diy-part2.sh"
             echo "=================================================="
 
-            ./diy-part2.sh
+            chmod +x ./diy-part2.sh
+
+            echo
+            echo "===== 检查 diy-part2.sh 语法 ====="
+
+            bash -n ./diy-part2.sh
+
+            echo "Shell 语法检查通过"
+
+
+            echo
+            echo "===== 开始执行 diy-part2.sh ====="
+
+            bash -x ./diy-part2.sh
 
           else
 
