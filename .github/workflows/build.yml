@@ -1,1037 +1,1005 @@
-name: Build ImmortalWrt MT7981 QLB
+name: ImmortalWrt Builder DIY
+
 on:
+  repository_dispatch:
+    types: ["Source Code Update"]
+
   workflow_dispatch:
     inputs:
-      extra_packages:
-        description: "额外软件包，空格分隔"
-        required: false
-        default: "luci-app-ttyd curl wget-ssl htop nano bash ca-bundle"
-
-      clean_build:
-        description: "清理旧的 OpenWrt 编译目录"
+      device:
+        description: "编译设备型号"
         required: true
+        type: choice
+        default: "all"
+        options:
+          - "512M"
+          - "256M"
+          - "128M"
+          - "QLB-4Pro"
+          - "all"
+
+      repo:
+        description: "指定源码仓库地址"
+        required: true
+        type: string
+        default: "https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git"
+
+      branch:
+        description: "指定源码 Branch"
+        required: false
+        type: string
+        default: "openwrt-25.12"
+
+      commit:
+        description: "指定源码 Commit，留空使用 Branch 最新代码"
+        required: false
+        type: string
+        default: ""
+
+      ssh:
+        description: "开启 SSH 配置，仅单设备有效"
+        required: false
+        type: boolean
+        default: false
+
+      release:
+        description: "发布到 GitHub Release"
+        required: false
         type: boolean
         default: true
+
+      prerelease:
+        description: "预发布版本"
+        required: false
+        type: boolean
+        default: false
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 
 env:
   TZ: Asia/Shanghai
 
-  # =========================================================
-  # 源码
-  # =========================================================
+  # ----------------------------------------------------------
+  # 编译设备
+  # ----------------------------------------------------------
 
-  CUDY_REPO: https://github.com/J260121/ubi_build.git
+  DEVICE_INPUT: ${{ github.event.inputs.device || github.event.client_payload.device || 'all' }}
 
-  OPENWRT_REPO: https://github.com/padavanonly/immortalwrt-mt798x-6.6.git
+  # ----------------------------------------------------------
+  # ImmortalWrt
+  # ----------------------------------------------------------
 
-  OPENWRT_BRANCH: openwrt-24.10-6.6
+  REPO_URL: ${{ github.event.inputs.repo || github.event.client_payload.repo || 'https://github.com/padavanonly/immortalwrt-mt798x-6.6' }}
 
-  # =========================================================
-  # 工作目录
-  #
-  # 当前 GitHub Actions 仓库：
-  #
-  # /home/runner/work/仓库名/仓库名
-  #
-  # 所以 ../ 就是同级工作目录
-  # =========================================================
+  REPO_BRANCH: ${{ github.event.inputs.branch || github.event.client_payload.branch || 'openwrt-24.10-6.6' }}
 
-  BUILD_ROOT: ${{ github.workspace }}/..
+  REPO_COMMIT: ${{ github.event.inputs.commit || github.event.client_payload.commit || '' }}
+
+  # ----------------------------------------------------------
+  # Ccache
+  # ----------------------------------------------------------
+
+  CCACHE_DIR: /workdir/.ccache
+  CCACHE_MAXSIZE: 6G
+
+  # ----------------------------------------------------------
+  # 编译目录
+  # ----------------------------------------------------------
+
+  OPENWRT_DIR: /workdir/openwrt
+
+  # ----------------------------------------------------------
+  # Release
+  # ----------------------------------------------------------
+
+  UPLOAD_RELEASE: ${{ github.event.inputs.release || github.event.client_payload.release || 'true' }}
+
+  PRERELEASE: ${{ github.event.inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
+
 
 jobs:
 
-  build:
+  # ============================================================
+  # Menuconfig
+  #
+  # 与原模板保持一致：
+  # 只有 SSH=true 且不是 all 才进入。
+  # ============================================================
+
+  menuconfig:
+    name: "⚙️ Menuconfig"
+
+    if: >
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.ssh == 'true' &&
+      github.event.inputs.device != 'all'
 
     runs-on: ubuntu-22.04
 
     steps:
 
-      # =======================================================
-      # 0. 拉取当前 GitHub Actions 仓库
-      # =======================================================
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
 
-      - name: Checkout workflow repository
+      - name: Checkout
         uses: actions/checkout@v4
 
 
-      # =======================================================
-      # 1. 安装编译环境
-      #
-      # 这是编译环境准备，不改变后面的源码处理顺序
-      # =======================================================
+      # --------------------------------------------------------
+      # 最小环境
+      # --------------------------------------------------------
 
-      - name: Install build dependencies
+      - name: Init Environment
         shell: bash
         run: |
           set -e
 
-          sudo apt-get update
+          sudo apt-get update -qq
 
           sudo apt-get install -y \
             build-essential \
-            clang \
-            flex \
-            bison \
-            g++ \
-            gawk \
-            gcc-multilib \
-            g++-multilib \
-            gettext \
             git \
-            libncurses5-dev \
-            libncurses-dev \
-            libssl-dev \
-            python3 \
-            python3-distutils \
-            python3-setuptools \
-            rsync \
-            unzip \
-            zlib1g-dev \
-            file \
             wget \
-            curl \
-            rename \
-            xsltproc \
-            swig \
-            time \
-            jq \
-            zip \
-            p7zip-full \
-            libelf-dev \
-            ccache
+            bzip2 \
+            python3 \
+            libncurses-dev
 
-          sudo timedatectl set-timezone "${TZ}" || true
+          sudo mkdir -p /workdir
+
+          sudo chown -R "$(id -u):$(id -g)" /workdir
 
 
-      # =======================================================
-      # 2. 拉取源码
-      #
-      # cudy:
-      #
-      # J260121/ubi_build.git
-      #
-      # openwrt:
-      #
-      # padavanonly/immortalwrt-mt798x-6.6
-      # =======================================================
+      # --------------------------------------------------------
+      # Clone ImmortalWrt
+      # --------------------------------------------------------
 
-      - name: 1. 拉取源码
+      - name: Clone Source
+        working-directory: /workdir
         shell: bash
         run: |
           set -e
 
-          ROOT_DIR="${BUILD_ROOT}"
-
-          CUDY_DIR="${ROOT_DIR}/cudy"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
-
-          echo "=================================================="
-          echo "拉取源码"
-          echo "=================================================="
-
-          echo "ROOT_DIR    = ${ROOT_DIR}"
-          echo "CUDY_DIR    = ${CUDY_DIR}"
-          echo "OPENWRT_DIR = ${OPENWRT_DIR}"
-
-          # 清理旧源码
-          rm -rf "${CUDY_DIR}"
-          rm -rf "${OPENWRT_DIR}"
-
-          mkdir -p "${ROOT_DIR}"
-
-          # ---------------------------------------------------
-          # 拉取 J260121/ubi_build.git
-          #
-          # 整个仓库直接放入 cudy
-          #
-          # 不会产生：
-          #
-          # cudy/ubi_build/
-          #
-          # ---------------------------------------------------
-
-          echo
-          echo ">>> Clone J260121/ubi_build.git"
-
           git clone \
-            --depth=1 \
-            "${CUDY_REPO}" \
-            "${CUDY_DIR}"
-
-          # ---------------------------------------------------
-          # 拉取 ImmortalWrt
-          # ---------------------------------------------------
-
-          echo
-          echo ">>> Clone ImmortalWrt"
-
-          git clone \
-            --depth=1 \
+            "$REPO_URL" \
+            -b "$REPO_BRANCH" \
             --single-branch \
-            --branch "${OPENWRT_BRANCH}" \
-            "${OPENWRT_REPO}" \
-            "${OPENWRT_DIR}"
+            --filter=blob:none \
+            openwrt
 
-          echo
-          echo "=================================================="
-          echo "源码拉取完成"
-          echo "=================================================="
+          cd openwrt
 
-          echo
-          echo "----- cudy -----"
+          if [ -n "$REPO_COMMIT" ]; then
+            git fetch \
+              --depth=1 \
+              origin \
+              "$REPO_COMMIT"
 
-          ls -la "${CUDY_DIR}"
-
-          echo
-          echo "----- openwrt -----"
-
-          ls -la "${OPENWRT_DIR}"
-
-          echo
-          echo "----- cudy 文件 -----"
-
-          find "${CUDY_DIR}" \
-            -maxdepth 3 \
-            -type f \
-            -not -path '*/.git/*' \
-            | sort
+            git checkout "$REPO_COMMIT"
+          fi
 
 
-      # =======================================================
-      # 3. 复制到工作目录
-      #
-      # 把 cudy 中的：
-      #
-      # config
-      # dts
-      # package
-      # sh
-      #
-      # 复制到 openwrt
-      # =======================================================
+      # --------------------------------------------------------
+      # 选择 Config
+      # --------------------------------------------------------
 
-      - name: 2. 复制 Cudy 文件到工作目录
+      - name: Set Config
         shell: bash
         run: |
           set -e
 
-          ROOT_DIR="${BUILD_ROOT}"
+          case "$DEVICE_INPUT" in
+            512M)
+              echo "CONFIG_FILE=config/512m.config" >> "$GITHUB_ENV"
+              ;;
 
-          CUDY_DIR="${ROOT_DIR}/cudy"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+            256M)
+              echo "CONFIG_FILE=config/256m.config" >> "$GITHUB_ENV"
+              ;;
 
-          echo "=================================================="
-          echo "复制 Cudy 文件到 OpenWrt 工作目录"
-          echo "=================================================="
+            128M)
+              echo "CONFIG_FILE=config/128m.config" >> "$GITHUB_ENV"
+              ;;
 
-          # ---------------------------------------------------
-          # config
-          # ---------------------------------------------------
+            QLB-4Pro)
+              echo "CONFIG_FILE=config/mt7981-QLB-4Pro.config" >> "$GITHUB_ENV"
+              ;;
 
-          CONFIG_FILE="${CUDY_DIR}/config/mt7981-QLB-4Pro.config"
-
-          if [ -f "${CONFIG_FILE}" ]; then
-
-            echo "复制设备配置："
-            echo "${CONFIG_FILE}"
-
-            cp -f \
-              "${CONFIG_FILE}" \
-              "${OPENWRT_DIR}/.config"
-
-          else
-
-            echo "ERROR:"
-            echo "找不到设备配置："
-            echo "${CONFIG_FILE}"
-
-            exit 1
-
-          fi
+            *)
+              echo "Unknown device: $DEVICE_INPUT"
+              exit 1
+              ;;
+          esac
 
 
-          # ---------------------------------------------------
-          # DTS
-          # ---------------------------------------------------
+      # --------------------------------------------------------
+      # Feeds + DIY + Config
+      # --------------------------------------------------------
 
-          if [ -d "${CUDY_DIR}/dts" ]; then
-
-            echo
-            echo "复制 DTS..."
-
-            mkdir -p \
-              "${OPENWRT_DIR}/target/linux/mediatek/dts"
-
-            cp -a \
-              "${CUDY_DIR}/dts/." \
-              "${OPENWRT_DIR}/target/linux/mediatek/dts/"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # package
-          # ---------------------------------------------------
-
-          if [ -d "${CUDY_DIR}/package" ]; then
-
-            echo
-            echo "复制自定义 package..."
-
-            mkdir -p \
-              "${OPENWRT_DIR}/package"
-
-            cp -a \
-              "${CUDY_DIR}/package/." \
-              "${OPENWRT_DIR}/package/"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # sh
-          #
-          # 只复制 sh 目录中的文件到 OpenWrt 根目录
-          # ---------------------------------------------------
-
-          if [ -d "${CUDY_DIR}/sh" ]; then
-
-            echo
-            echo "复制 sh 脚本..."
-
-            cp -a \
-              "${CUDY_DIR}/sh/." \
-              "${OPENWRT_DIR}/"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 检查复制结果
-          # ---------------------------------------------------
-
-          echo
-          echo "=================================================="
-          echo "复制结果"
-          echo "=================================================="
-
-          echo
-          echo "----- .config -----"
-
-          ls -lh \
-            "${OPENWRT_DIR}/.config"
-
-
-          echo
-          echo "----- DTS -----"
-
-          find \
-            "${OPENWRT_DIR}/target/linux/mediatek/dts" \
-            -maxdepth 1 \
-            -type f \
-            | sort
-
-
-          echo
-          echo "----- package -----"
-
-          find \
-            "${OPENWRT_DIR}/package" \
-            -maxdepth 4 \
-            -type f \
-            -name Makefile \
-            | sort
-
-
-          echo
-          echo "----- scripts -----"
-
-          ls -lh \
-            "${OPENWRT_DIR}/diy-part1.sh" \
-            "${OPENWRT_DIR}/diy-part2.sh" \
-            2>/dev/null || true
-
-
-
-
-      - name: 3. 执行 DIY 脚本
+      - name: Load Feeds and Config
         shell: bash
         run: |
           set -e
 
-          ROOT_DIR="${BUILD_ROOT}"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
+          chmod +x \
+            diy-part1.sh \
+            diy-part2.sh \
+            diy-qlb.sh
 
-          cd "${OPENWRT_DIR}"
+          cd "$OPENWRT_DIR"
 
-          echo "=================================================="
-          echo "DIY 脚本"
-          echo "=================================================="
-
-          # ---------------------------------------------------
-          # 给所有 shell 脚本执行权限
-          # ---------------------------------------------------
-
-          find . -maxdepth 1 -type f -name "*.sh" \
-            -exec chmod +x {} \;
-
-          echo
-          echo "脚本权限："
-
-          ls -lh *.sh 2>/dev/null || true
-
-
-          # ---------------------------------------------------
-          # DIY PART 1
-          # ---------------------------------------------------
-
-          if [ -f "./diy-part1.sh" ]; then
-
-            echo
-            echo "=================================================="
-            echo "执行 diy-part1.sh"
-            echo "=================================================="
-
-            chmod +x ./diy-part1.sh
-
-            bash -x ./diy-part1.sh
-
-          else
-
-            echo "WARNING: diy-part1.sh 不存在"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # DIY PART 2
-          # ---------------------------------------------------
-
-          if [ -f "./diy-part2.sh" ]; then
-
-            echo
-            echo "=================================================="
-            echo "执行 diy-part2.sh"
-            echo "=================================================="
-
-            chmod +x ./diy-part2.sh
-
-            echo
-            echo "===== 检查 diy-part2.sh 语法 ====="
-            bash -x ./diy-part2.sh
-
-          echo
-          echo "=================================================="
-          echo "DIY 脚本执行完成"
-          echo "=================================================="
-
-
-      # =======================================================
-      # 5. 引入额外软件包
-      #
-      # 例如：
-      #
-      # luci-app-ttyd
-      # curl
-      # wget-ssl
-      # htop
-      # nano
-      #
-      # 通过 workflow_dispatch 输入
-      # =======================================================
-
-      - name: 4. 引入额外软件包
-        shell: bash
-        env:
-          INPUT_EXTRA_PACKAGES: ${{ github.event.inputs.extra_packages }}
-        run: |
-          set -e
-
-          ROOT_DIR="${BUILD_ROOT}"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
-
-          cd "${OPENWRT_DIR}"
-
-
-          echo "=================================================="
-          echo "引入额外软件包"
-          echo "=================================================="
-
-
-          # ---------------------------------------------------
-          # 如果用户没有输入，则使用默认软件包
-          # ---------------------------------------------------
-
-          EXTRA_PACKAGES="${INPUT_EXTRA_PACKAGES}"
-
-          if [ -z "${EXTRA_PACKAGES}" ]; then
-
-            EXTRA_PACKAGES="
-            luci-app-ttyd
-            curl
-            wget-ssl
-            htop
-            nano
-            bash
-            ca-bundle
-            "
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 整理空白
-          # ---------------------------------------------------
-
-          EXTRA_PACKAGES="$(echo "${EXTRA_PACKAGES}" | xargs)"
-
-
-          echo
-          echo "额外软件包："
-          echo "${EXTRA_PACKAGES}"
-
-
-          # 保存给后续步骤
-          echo "EXTRA_PACKAGES=${EXTRA_PACKAGES}" >> "${GITHUB_ENV}"
-
-
-          # ---------------------------------------------------
-          # feeds
-          #
-          # 额外软件包需要先安装 feeds
-          # ---------------------------------------------------
-
-          echo
-          echo ">>> 更新 feeds"
+          # DIY Part 1 必须在 feeds update 前执行
+          "$GITHUB_WORKSPACE/diy-part1.sh"
 
           ./scripts/feeds update -a
-
-          echo
-          echo ">>> 安装 feeds"
-
           ./scripts/feeds install -a
 
+          cp -f \
+            "$GITHUB_WORKSPACE/$CONFIG_FILE" \
+            .config
 
-          # ---------------------------------------------------
-          # 处理额外软件包
-          # ---------------------------------------------------
+          # 512M / QLB 的设备定义必须在 defconfig 前加入
+          case "$DEVICE_INPUT" in
+            512M)
+              "$GITHUB_WORKSPACE/diy-part2.sh"
+              ;;
 
-          for PKG in ${EXTRA_PACKAGES}; do
-
-            echo
-            echo "----------------------------------------"
-            echo "处理软件包：${PKG}"
-            echo "----------------------------------------"
-
-
-            # 检查 package 是否存在
-            if ./scripts/feeds search "${PKG}" | grep -q "${PKG}"; then
-
-              echo "找到软件包：${PKG}"
-
-            elif find package feeds \
-                -type d \
-                -name "${PKG}" \
-                2>/dev/null | grep -q .; then
-
-              echo "找到本地软件包：${PKG}"
-
-            else
-
-              echo "WARNING: 未找到软件包：${PKG}"
-
-            fi
-
-
-            # -------------------------------------------------
-            # 写入 .config
-            # -------------------------------------------------
-
-            CONFIG_NAME="CONFIG_PACKAGE_${PKG}"
-
-
-            # 删除旧配置
-            sed -i \
-              "/^${CONFIG_NAME}=y$/d" \
-              .config
-
-            sed -i \
-              "/^# ${CONFIG_NAME} is not set$/d" \
-              .config
-
-
-            # 写入
-            echo "${CONFIG_NAME}=y" >> .config
-
-          done
-
-
-          echo
-          echo "=================================================="
-          echo "额外软件包引入完成"
-          echo "=================================================="
-
-
-      # =======================================================
-      # 6. 生成最终配置
-      #
-      # make defconfig 会根据：
-      #
-      # DTS
-      # package
-      # feeds
-      # diy 脚本
-      # 额外软件包
-      #
-      # 生成最终 .config
-      # =======================================================
-
-      - name: 5. 生成最终配置
-        shell: bash
-        run: |
-          set -e
-
-          ROOT_DIR="${BUILD_ROOT}"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
-
-          cd "${OPENWRT_DIR}"
-
-          echo "=================================================="
-          echo "生成最终配置"
-          echo "=================================================="
-
-
-          # ---------------------------------------------------
-          # 生成配置
-          # ---------------------------------------------------
+            QLB-4Pro)
+              "$GITHUB_WORKSPACE/diy-qlb.sh"
+              ;;
+          esac
 
           make defconfig
 
 
-          # ---------------------------------------------------
-          # 检查目标平台
-          # ---------------------------------------------------
+      # --------------------------------------------------------
+      # SSH
+      # --------------------------------------------------------
+
+      - name: SSH Session
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 15
+
+
+      # --------------------------------------------------------
+      # 保存 Config
+      # --------------------------------------------------------
+
+      - name: Push Config
+        shell: bash
+        run: |
+          set -e
+
+          cp -f \
+            "$OPENWRT_DIR/.config" \
+            "$GITHUB_WORKSPACE/$CONFIG_FILE"
+
+          cd "$GITHUB_WORKSPACE"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add "$CONFIG_FILE"
+
+          if git diff --cached --quiet; then
+            echo "No config changes."
+            exit 0
+          fi
+
+          git commit \
+            -m "Update config: ${CONFIG_FILE}"
+
+          git pull --rebase origin main
+
+          git push
+
+
+  # ============================================================
+  # Build
+  # ============================================================
+
+  build:
+    name: "🔨 Build Firmware"
+
+    needs: menuconfig
+
+    if: >
+      always() &&
+      (
+        needs.menuconfig.result == 'success' ||
+        needs.menuconfig.result == 'skipped'
+      )
+
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      # ========================================================
+      # Checkout
+      # ========================================================
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+
+      # ========================================================
+      # 编译环境
+      # ========================================================
+
+      - name: Init Environment
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -e
+
+          sudo rm -rf \
+            /etc/apt/sources.list.d/* \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc
+
+          sudo apt-get update -qq
+
+          sudo apt-get install -y \
+            libncurses5-dev \
+            libncurses-dev \
+            liblzo2-dev \
+            lzop \
+            ack \
+            antlr3 \
+            asciidoc \
+            autoconf \
+            automake \
+            autopoint \
+            binutils \
+            bison \
+            build-essential \
+            bzip2 \
+            ccache \
+            clang \
+            cmake \
+            cpio \
+            curl \
+            device-tree-compiler \
+            ecj \
+            fastjar \
+            flex \
+            gawk \
+            gettext \
+            gcc-multilib \
+            g++-multilib \
+            git \
+            gnutls-dev \
+            gperf \
+            haveged \
+            help2man \
+            intltool \
+            lib32gcc-s1 \
+            libc6-dev-i386 \
+            libelf-dev \
+            libglib2.0-dev \
+            libgmp3-dev \
+            libltdl-dev \
+            libmpc-dev \
+            libmpfr-dev \
+            libpython3-dev \
+            libreadline-dev \
+            libssl-dev \
+            libtool \
+            libyaml-dev \
+            libz-dev \
+            lld \
+            llvm \
+            lrzsz \
+            mkisofs \
+            msmtp \
+            ninja-build \
+            p7zip \
+            p7zip-full \
+            patch \
+            pkgconf \
+            python3 \
+            python3-pip \
+            python3-ply \
+            python3-docutils \
+            python3-pyelftools \
+            qemu-utils \
+            re2c \
+            rsync \
+            scons \
+            squashfs-tools \
+            subversion \
+            swig \
+            texinfo \
+            uglifyjs \
+            unzip \
+            vim \
+            wget \
+            xmlto \
+            xxd \
+            zlib1g-dev \
+            zstd
+
+          sudo apt-get clean
+
+          sudo timedatectl set-timezone "$TZ"
+
+          sudo mkdir -p /workdir
+
+          sudo chown -R \
+            "$(id -u):$(id -g)" \
+            /workdir
+
+
+      # ========================================================
+      # Clone ImmortalWrt
+      # ========================================================
+
+      - name: Clone Source
+        working-directory: /workdir
+        shell: bash
+        run: |
+          set -e
+
+          git clone \
+            "$REPO_URL" \
+            -b "$REPO_BRANCH" \
+            --single-branch \
+            --filter=blob:none \
+            openwrt
+
+          cd openwrt
+
+          if [ -n "$REPO_COMMIT" ]; then
+
+            git fetch \
+              --depth=1 \
+              origin \
+              "$REPO_COMMIT"
+
+            git checkout "$REPO_COMMIT"
+
+          fi
+
+          echo "========================================"
+          echo "IMMORTALWRT"
+          echo "========================================"
+
+          echo "Branch:"
+          git branch --show-current
 
           echo
-          echo "=================================================="
-          echo "目标平台"
-          echo "=================================================="
 
-          grep \
-            -E '^CONFIG_TARGET_' \
-            .config \
-            | grep '=y' \
-            || true
+          echo "Commit:"
+          git rev-parse HEAD
 
 
-          # ---------------------------------------------------
-          # 检查额外软件包
-          # ---------------------------------------------------
+      # ========================================================
+      # DIY Scripts
+      # ========================================================
 
-          echo
-          echo "=================================================="
-          echo "额外软件包最终配置"
-          echo "=================================================="
+      - name: Prepare DIY Scripts
+        shell: bash
+        run: |
+          set -e
+
+          chmod +x \
+            diy-part1.sh \
+            diy-part2.sh \
+            diy-qlb.sh
+
+          bash -n diy-part1.sh
+          bash -n diy-part2.sh
+          bash -n diy-qlb.sh
 
 
-          for PKG in ${EXTRA_PACKAGES}; do
+      # ========================================================
+      # Load Feeds
+      # ========================================================
 
-            CONFIG_NAME="CONFIG_PACKAGE_${PKG}"
+      - name: Load Feeds
+        shell: bash
+        run: |
+          set -e
 
-            if grep -q "^${CONFIG_NAME}=y$" .config; then
+          cd "$OPENWRT_DIR"
 
-              echo "OK     ${PKG}"
+          # ----------------------------------------------------
+          # Cudy DIY Part 1
+          #
+          # 当前仓库的 diy-part1.sh 明确设计为：
+          # Before Update feeds
+          # ----------------------------------------------------
+
+          "$GITHUB_WORKSPACE/diy-part1.sh"
+
+          # ----------------------------------------------------
+          # Feeds
+          # ----------------------------------------------------
+
+          ./scripts/feeds update -a
+
+          ./scripts/feeds install -a
+
+
+      # ========================================================
+      # Apply Device DIY
+      #
+      # 必须在 make defconfig 前执行。
+      # ========================================================
+
+      - name: Apply Device DIY
+        shell: bash
+        run: |
+          set -e
+
+          cd "$OPENWRT_DIR"
+
+          case "$DEVICE_INPUT" in
+
+            512M)
+              echo "========================================"
+              echo "Apply TR3000 512M"
+              echo "========================================"
+
+              "$GITHUB_WORKSPACE/diy-part2.sh"
+              ;;
+
+            256M)
+              echo "========================================"
+              echo "TR3000 256M"
+              echo "========================================"
+              ;;
+
+            128M)
+              echo "========================================"
+              echo "TR3000 128M"
+              echo "========================================"
+              ;;
+
+            QLB-4Pro)
+              echo "========================================"
+              echo "Apply QLB-4Pro"
+              echo "========================================"
+
+              "$GITHUB_WORKSPACE/diy-qlb.sh"
+              ;;
+
+            all)
+              echo "========================================"
+              echo "Apply all device definitions"
+              echo "========================================"
+
+              # 512M device definition
+              "$GITHUB_WORKSPACE/diy-part2.sh"
+
+              # QLB-4Pro device definition
+              "$GITHUB_WORKSPACE/diy-qlb.sh"
+              ;;
+
+            *)
+              echo "Unknown device: $DEVICE_INPUT"
+              exit 1
+              ;;
+
+          esac
+
+
+      # ========================================================
+      # Config Hash
+      #
+      # 不再复制错误的 QLB DTS。
+      # 当前仓库已有正确 dts/ 文件。
+      # ========================================================
+
+      - name: Config Hash
+        id: config-hash
+        shell: bash
+        run: |
+          set -e
+
+          cd "$OPENWRT_DIR"
+          
+          cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
+
+          cat ./target/linux/mediatek/dts/mt7981b-QLB*.dts
+          
+          case "$DEVICE_INPUT" in
+
+            512M)
+              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
+              ;;
+
+            256M)
+              CONFIG="$GITHUB_WORKSPACE/config/256m.config"
+              ;;
+
+            128M)
+              CONFIG="$GITHUB_WORKSPACE/config/128m.config"
+              ;;
+
+            QLB-4Pro)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
+              ;;
+
+            all)
+              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
+              ;;
+
+            *)
+              echo "Unknown device"
+              exit 1
+              ;;
+
+          esac
+
+          cp -f "$CONFIG" .config
+
+          make defconfig
+
+          CONFIG_HASH=$(md5sum .config | awk '{print $1}')
+
+          echo "hash=$CONFIG_HASH" >> "$GITHUB_OUTPUT"
+
+          echo "========================================"
+          echo "CONFIG HASH"
+          echo "========================================"
+
+          echo "$CONFIG_HASH"
+
+
+      # ========================================================
+      # Ccache Cache
+      # ========================================================
+
+      - name: Cache Ccache
+        uses: actions/cache@v4
+        with:
+          path: /workdir/.ccache
+
+          key: >-
+            ${{ runner.os }}-ccache-
+            ${{ env.REPO_BRANCH }}-
+            ${{ steps.config-hash.outputs.hash }}-
+            ${{ hashFiles('diy-*.sh', 'config/*.config', 'dts/*') }}
+
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-ccache-
+
+
+      # ========================================================
+      # Download Cache
+      #
+      # 不绑定 config。
+      # 不同设备共享下载缓存。
+      # ========================================================
+
+      - name: Cache DL
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt/dl
+
+          key: >-
+            ${{ runner.os }}-openwrt-dl-
+            ${{ env.REPO_BRANCH }}-
+            ${{ hashFiles('feeds.conf.default') }}
+
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-openwrt-dl-
+
+
+      # ========================================================
+      # Configure Ccache
+      # ========================================================
+
+      - name: Configure Ccache
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p "$CCACHE_DIR"
+
+          ccache \
+            --set-config=max_size="$CCACHE_MAXSIZE"
+
+          ccache \
+            --set-config=cache_dir="$CCACHE_DIR"
+
+          ccache \
+            --set-config=compression=true
+
+          ccache \
+            --set-config=compression_level=6
+
+          ccache -z
+
+
+      # ========================================================
+      # Download
+      #
+      # 关键优化：
+      #
+      # 原模板：
+      #
+      # 512M -> download
+      # 256M -> download
+      # 128M -> download
+      # QLB  -> download
+      #
+      # 这里：
+      #
+      # 全部设备只 download 一次。
+      # ========================================================
+
+      - name: Download Sources
+        shell: bash
+        run: |
+          set -e
+
+          cd "$OPENWRT_DIR"
+
+          make download -j"$(nproc)"
+
+          find dl \
+            -size -1024c \
+            -exec rm -f {} \;
+
+
+      # ========================================================
+      # Compile Loop
+      # ========================================================
+
+      - name: Compile Loop
+        id: compile
+        shell: bash
+        run: |
+          set -e
+
+          if [ "$DEVICE_INPUT" = "all" ]; then
+            DEVICES="512M 256M 128M QLB-4Pro"
+          else
+            DEVICES="$DEVICE_INPUT"
+          fi
+
+          mkdir -p \
+            "$GITHUB_WORKSPACE/firmware_collection"
+
+          cd "$OPENWRT_DIR"
+
+
+          for DEV in $DEVICES; do
+
+            echo
+            echo "::group::🚀 Building $DEV"
+
+            case "$DEV" in
+
+              512M)
+                CONFIG="$GITHUB_WORKSPACE/config/512m.config"
+                ;;
+
+              256M)
+                CONFIG="$GITHUB_WORKSPACE/config/256m.config"
+                ;;
+
+              128M)
+                CONFIG="$GITHUB_WORKSPACE/config/128m.config"
+                ;;
+
+              QLB-4Pro)
+                CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
+                ;;
+
+              *)
+                echo "Unknown device: $DEV"
+                exit 1
+                ;;
+
+            esac
+
+
+            echo "========================================"
+            echo "DEVICE: $DEV"
+            echo "CONFIG: $CONFIG"
+            echo "========================================"
+
+
+            # --------------------------------------------------
+            # 写入设备 Config
+            # --------------------------------------------------
+
+            cp -f \
+              "$CONFIG" \
+              .config
+
+
+            # --------------------------------------------------
+            # 根据当前 Config 生成最终配置
+            # --------------------------------------------------
+
+            make defconfig
+
+
+            # --------------------------------------------------
+            # 显示 Target
+            # --------------------------------------------------
+
+            grep '^CONFIG_TARGET_' .config \
+              | grep '=y' \
+              || true
+
+
+            # --------------------------------------------------
+            # 编译
+            # --------------------------------------------------
+
+            if make \
+              -j"$(nproc)" \
+              CC="ccache gcc" \
+              CXX="ccache g++"
+            then
+
+              echo "========================================"
+              echo "✅ $DEV BUILD SUCCESS"
+              echo "========================================"
 
             else
 
-              echo "MISS   ${PKG}"
+              echo "========================================"
+              echo "⚠️ $DEV PARALLEL BUILD FAILED"
+              echo "Retry with V=s"
+              echo "========================================"
+
+              make \
+                -j1 \
+                V=s \
+                CC="ccache gcc" \
+                CXX="ccache g++"
 
             fi
+
+
+            # --------------------------------------------------
+            # 收集当前设备
+            # --------------------------------------------------
+
+            mkdir -p \
+              "$GITHUB_WORKSPACE/firmware_collection/$DEV"
+
+
+            find bin/targets \
+              -type f \
+              \( \
+                -name "*.bin" \
+                -o -name "*.itb" \
+                -o -name "*.img" \
+                -o -name "*.tar" \
+                -o -name "*.gz" \
+                -o -name "*.zip" \
+              \) \
+              -exec cp -f {} \
+              "$GITHUB_WORKSPACE/firmware_collection/$DEV/" \;
+
+
+            echo "::endgroup::"
 
           done
 
 
-          # ---------------------------------------------------
-          # 保存最终配置
-          # ---------------------------------------------------
-
-          mkdir -p \
-            "${ROOT_DIR}/firmware"
-
-          cp -f \
-            .config \
-            "${ROOT_DIR}/firmware/defconfig"
+          echo "status=success" >> "$GITHUB_OUTPUT"
 
 
-          echo
-          echo "最终配置生成完成。"
+      # ========================================================
+      # Ccache Statistics
+      # ========================================================
 
-
-      # =======================================================
-      # 7. 开始编译
-      # =======================================================
-
-      - name: 6. 开始编译
-        shell: bash
-        run: |
-          set -e
-
-          ROOT_DIR="${BUILD_ROOT}"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
-
-          cd "${OPENWRT_DIR}"
-
-
-          echo "=================================================="
-          echo "开始编译"
-          echo "=================================================="
-
-          echo "CPU:"
-          nproc
-
-          echo
-          echo "开始下载编译依赖..."
-
-
-          # ---------------------------------------------------
-          # 下载源码包
-          # ---------------------------------------------------
-
-          make download \
-            -j"$(nproc)" \
-            V=s
-
-
-          # ---------------------------------------------------
-          # 开始编译
-          # ---------------------------------------------------
-
-          echo
-          echo "开始编译固件..."
-
-
-          START_TIME="$(date +%s)"
-
-          echo "BUILD_START_TIME=${START_TIME}" >> "${GITHUB_ENV}"
-
-
-          make \
-            -j"$(nproc)" \
-            V=s
-
-
-          END_TIME="$(date +%s)"
-
-          echo "BUILD_END_TIME=${END_TIME}" >> "${GITHUB_ENV}"
-
-
-          BUILD_SECONDS=$((END_TIME - START_TIME))
-
-          echo "BUILD_SECONDS=${BUILD_SECONDS}" >> "${GITHUB_ENV}"
-
-
-          echo
-          echo "=================================================="
-          echo "编译完成"
-          echo "=================================================="
-
-          echo "编译耗时：${BUILD_SECONDS} 秒"
-
-
-      # =======================================================
-      # 8. 生成编译信息
-      #
-      # 无论编译成功还是失败，都执行
-      # =======================================================
-
-      - name: 7. 生成编译信息
+      - name: Ccache Statistics
         if: always()
         shell: bash
         run: |
-          set -e
+          ccache -s || true
 
-          ROOT_DIR="${BUILD_ROOT}"
-          OPENWRT_DIR="${ROOT_DIR}/openwrt"
-          FIRMWARE_DIR="${ROOT_DIR}/firmware"
 
-          mkdir -p "${FIRMWARE_DIR}"
+      # ========================================================
+      # 上传 Artifact
+      # ========================================================
 
-
-          echo "=================================================="
-          echo "生成编译信息"
-          echo "=================================================="
-
-
-          # ---------------------------------------------------
-          # GitHub 信息
-          # ---------------------------------------------------
-
-          cat > "${FIRMWARE_DIR}/build-info.txt" <<EOF
-              ============================================================
-              ImmortalWrt MT7981 Cudy Build Information
-              ============================================================
-              
-              GitHub Repository:
-              ${GITHUB_REPOSITORY}
-
-                GitHub Run:
-                ${GITHUB_RUN_NUMBER}
-                
-                GitHub SHA:
-                ${GITHUB_SHA}
-                
-                GitHub Ref:
-                ${GITHUB_REF}
-                
-                Workflow:
-                ${GITHUB_WORKFLOW}
-                
-                Runner:
-                ${RUNNER_OS}
-                
-                Build Time:
-                $(date '+%Y-%m-%d %H:%M:%S %Z')
-                
-                ============================================================
-                Source
-                ============================================================
-                
-                Cudy Source:
-                ${CUDY_REPO}
-                
-                OpenWrt Source:
-                ${OPENWRT_REPO}
-                
-                OpenWrt Branch:
-                ${OPENWRT_BRANCH}
-                
-                ============================================================
-                Extra Packages
-                ============================================================
-                
-                ${EXTRA_PACKAGES}
-                
-                ============================================================
-                Build Result
-                ============================================================
-                
-                EOF
-
-
-          # ---------------------------------------------------
-          # Cudy Git 信息
-          # ---------------------------------------------------
-
-          if [ -d "${ROOT_DIR}/cudy/.git" ]; then
-
-            echo "Cudy Commit:" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            git \
-              -C "${ROOT_DIR}/cudy" \
-              rev-parse HEAD \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            echo \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # OpenWrt Git 信息
-          # ---------------------------------------------------
-
-          if [ -d "${OPENWRT_DIR}/.git" ]; then
-
-            echo "OpenWrt Commit:" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            git \
-              -C "${OPENWRT_DIR}" \
-              rev-parse HEAD \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            echo \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 编译状态
-          # ---------------------------------------------------
-
-          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
-
-            echo "Firmware build directory: OK" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          else
-
-            echo "Firmware build directory: NOT FOUND" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 编译时间
-          # ---------------------------------------------------
-
-          if [ -n "${BUILD_SECONDS:-}" ]; then
-
-            echo \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            echo "Build Duration:" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-            echo "${BUILD_SECONDS} seconds" \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 文件信息
-          # ---------------------------------------------------
-
-          echo \
-            >> "${FIRMWARE_DIR}/build-info.txt"
-
-          echo "============================================================" \
-            >> "${FIRMWARE_DIR}/build-info.txt"
-
-          echo "Firmware Files" \
-            >> "${FIRMWARE_DIR}/build-info.txt"
-
-          echo "============================================================" \
-            >> "${FIRMWARE_DIR}/build-info.txt"
-
-
-          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
-
-            find \
-              "${OPENWRT_DIR}/bin/targets" \
-              -type f \
-              -printf '%p\t%k KB\n' \
-              | sort \
-              >> "${FIRMWARE_DIR}/build-info.txt"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 复制固件
-          # ---------------------------------------------------
-
-          if [ -d "${OPENWRT_DIR}/bin/targets" ]; then
-
-            echo
-            echo "复制最终固件..."
-
-            cp -a \
-              "${OPENWRT_DIR}/bin/targets/." \
-              "${FIRMWARE_DIR}/"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 保存最终 .config
-          # ---------------------------------------------------
-
-          if [ -f "${OPENWRT_DIR}/.config" ]; then
-
-            cp -f \
-              "${OPENWRT_DIR}/.config" \
-              "${FIRMWARE_DIR}/.config"
-
-          fi
-
-
-          # ---------------------------------------------------
-          # 保存 feeds 配置
-          # ---------------------------------------------------
-
-          if [ -f "${OPENWRT_DIR}/feeds.conf.default" ]; then
-
-            cp -f \
-              "${OPENWRT_DIR}/feeds.conf.default" \
-              "${FIRMWARE_DIR}/feeds.conf.default"
-
-          fi
-
-
-          echo
-          echo "=================================================="
-          echo "编译信息"
-          echo "=================================================="
-
-          cat \
-            "${FIRMWARE_DIR}/build-info.txt"
-
-
-      # =======================================================
-      # 9. 输出固件列表
-      # =======================================================
-
-      - name: Show firmware files
-        if: always()
-        shell: bash
-        run: |
-          set -e
-
-          ROOT_DIR="${BUILD_ROOT}"
-          FIRMWARE_DIR="${ROOT_DIR}/firmware"
-
-          echo "=================================================="
-          echo "最终文件"
-          echo "=================================================="
-
-          if [ -d "${FIRMWARE_DIR}" ]; then
-
-            find \
-              "${FIRMWARE_DIR}" \
-              -type f \
-              -printf '%p\t%k KB\n' \
-              | sort
-
-          else
-
-            echo "firmware 目录不存在"
-
-          fi
-
-
-      # =======================================================
-      # 10. 上传最终固件和编译信息
-      # =======================================================
-
-      - name: Upload firmware and build information
-        if: always()
+      - name: Upload Artifacts
+        if: steps.compile.outputs.status == 'success'
         uses: actions/upload-artifact@v4
         with:
-          name: immortalwrt-mt7981-cudy-${{ github.run_number }}
-          path: |
-            ${{ github.workspace }}/../firmware/**
-          if-no-files-found: warn
-          retention-days: 7
+          name: ImmortalWrt_${{ env.DEVICE_INPUT }}
+          path: ${{ github.workspace }}/firmware_collection/
+          if-no-files-found: error
+          compression-level: 9
 
 
-      # =======================================================
-      # 11. 编译失败时上传 OpenWrt 配置和日志
-      # =======================================================
+      # ========================================================
+      # Release
+      # ========================================================
 
-      - name: Upload build logs
-        if: failure()
-        uses: actions/upload-artifact@v4
+      - name: Generate Release
+        id: tag
+        if: >
+          steps.compile.outputs.status == 'success' &&
+          env.UPLOAD_RELEASE == 'true'
+        shell: bash
+        run: |
+          set -e
+
+          BUILD_TIME=$(date +"%Y.%m.%d-%H%M")
+
+          echo "release_tag=$BUILD_TIME" >> "$GITHUB_OUTPUT"
+
+          cat > release.txt << EOF
+          ## 📦 ImmortalWrt Firmware
+
+          **Build Time:** $BUILD_TIME
+
+          **Branch:** $REPO_BRANCH
+
+          **Commit:** $(cd "$OPENWRT_DIR" && git rev-parse --short HEAD)
+
+          **Device:** $DEVICE_INPUT
+
+          **Repository:** $REPO_URL
+          EOF
+
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+
+      # ========================================================
+      # Upload Release
+      # ========================================================
+
+      - name: Upload Release
+        if: steps.tag.outputs.status == 'success'
+        uses: softprops/action-gh-release@v2
         with:
-          name: immortalwrt-build-logs-${{ github.run_number }}
-          path: |
-            ${{ github.workspace }}/../openwrt/.config
-            ${{ github.workspace }}/../openwrt/tmp/**
-            ${{ github.workspace }}/../openwrt/logs/**
-          if-no-files-found: ignore
-          retention-days: 3
+          tag_name: ${{ steps.tag.outputs.release_tag }}
+          body_path: release.txt
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+
+          files: |
+            firmware_collection/**/*.bin
+            firmware_collection/**/*.itb
+            firmware_collection/**/*.img
+            firmware_collection/**/*.tar
+            firmware_collection/**/*.gz
+            firmware_collection/**/*.zip
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+      # ========================================================
+      # 清理旧 Workflow
+      # ========================================================
+
+      - name: Clean Old Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 9
+
+
+      # ========================================================
+      # 清理旧 Release
+      # ========================================================
+
+      - name: Clean Old Releases
+        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 3
+          delete_tags: true
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
