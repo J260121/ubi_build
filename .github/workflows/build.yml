@@ -22,7 +22,7 @@ on:
         description: "指定源码仓库地址"
         required: true
         type: string
-        default: "https://github.com/immortalwrt/immortalwrt.git"
+        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git"
 
       branch:
         description: "指定源码 Branch"
