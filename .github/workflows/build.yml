@@ -22,13 +22,13 @@ on:
         description: "指定源码仓库地址"
         required: true
         type: string
-        default: "https://github.com/chasey-dev/immortalwrt-mt798x-rebase.git"
+        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6"
 
       branch:
         description: "指定源码 Branch"
         required: false
         type: string
-        default: "openwrt-25.12"
+        default: "openwrt-24.10"
 
       commit:
         description: "指定源码 Commit，留空使用 Branch 最新代码"
