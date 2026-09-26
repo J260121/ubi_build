@@ -22,8 +22,8 @@ if [ -d "$GITHUB_WORKSPACE/package/luci-compat-keep" ]; then
   mkdir -p package
   cp -r "$GITHUB_WORKSPACE/package/luci-compat-keep" package/
 fi
-echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
-git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
-git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
-git clone https://github.com/timsaya/luci-app-bandix package/luci-app-bandix
-git clone https://github.com/timsaya/openwrt-bandix package/openwrt-bandix
+#echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+#git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
+#git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
+#git clone https://github.com/timsaya/luci-app-bandix package/luci-app-bandix
+#git clone https://github.com/timsaya/openwrt-bandix package/openwrt-bandix
