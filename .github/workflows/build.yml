@@ -227,8 +227,7 @@ jobs:
 
           chmod +x \
             diy-part1.sh \
-            diy-part2.sh \
-            diy-qlb.sh
+            diy-qlb.sh \
 
           cd "$OPENWRT_DIR"
 
