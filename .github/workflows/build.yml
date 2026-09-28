@@ -1,356 +1,90 @@
-name: ImmortalWrt Builder DIY 8621
+```yaml
+name: Cudy TR3000 ImmortalWrt Builder
 
 on:
-  repository_dispatch:
-    types: ["Source Code Update"]
-
   workflow_dispatch:
     inputs:
-      device:
-        description: "编译设备型号"
-        required: true
-        type: choice
-        default: "all"
-        options:
-          - "512M"
-          - "256M"
-          - "128M"
-          - "QLB-4Pro"
-          - "all"
-
-      repo:
-        description: "指定源码仓库地址"
-        required: true
-        type: string
-        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git"
 
       branch:
-        description: "指定源码 Branch"
-        required: false
+        description: "ImmortalWrt branch"
+        required: true
+        default: "master"
         type: string
-        default: "openwrt-24.10-6.6"
 
-      commit:
-        description: "指定源码 Commit，留空使用 Branch 最新代码"
-        required: false
+      config:
+        description: "Default config file"
+        required: true
+        default: "config/mt7981-QLB-4Pro.config"
         type: string
-        default: ""
 
       ssh:
-        description: "开启 SSH 配置，仅单设备有效"
-        required: false
-        type: boolean
+        description: "Enable SSH for menuconfig"
+        required: true
         default: false
-
-      release:
-        description: "发布到 GitHub Release"
-        required: false
         type: boolean
-        default: true
 
-      prerelease:
-        description: "预发布版本"
-        required: false
-        type: boolean
+      clean:
+        description: "Clean build cache"
+        required: true
         default: false
+        type: boolean
 
+      make_jobs:
+        description: "Compile jobs"
+        required: true
+        default: "4"
+        type: string
+
+  repository_dispatch:
+    types:
+      - Source Code Update
+
+permissions:
+  contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: cudy-immortalwrt-${{ github.ref }}
   cancel-in-progress: true
 
-
 env:
+  SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
+  SOURCE_DIR: openwrt
+  CUSTOM_DIR: cudy
   TZ: Asia/Shanghai
-
-  # ----------------------------------------------------------
-  # 编译设备
-  # ----------------------------------------------------------
-
-  DEVICE_INPUT: ${{ github.event.inputs.device || github.event.client_payload.device || 'all' }}
-
-  # ----------------------------------------------------------
-  # ImmortalWrt
-  # ----------------------------------------------------------
-
-  REPO_URL: ${{ github.event.inputs.repo || github.event.client_payload.repo || 'https://github.com/padavanonly/immortalwrt-mt798x-6.6' }}
-
-  REPO_BRANCH: ${{ github.event.inputs.branch || github.event.client_payload.branch || 'openwrt-24.10-6.6' }}
-
-  REPO_COMMIT: ${{ github.event.inputs.commit || github.event.client_payload.commit || '' }}
-
-  # ----------------------------------------------------------
-  # Ccache
-  # ----------------------------------------------------------
-
-  CCACHE_DIR: /workdir/.ccache
-  CCACHE_MAXSIZE: 6G
-
-  # ----------------------------------------------------------
-  # 编译目录
-  # ----------------------------------------------------------
-
-  OPENWRT_DIR: /workdir/openwrt
-
-  # ----------------------------------------------------------
-  # Release
-  # ----------------------------------------------------------
-
-  UPLOAD_RELEASE: ${{ github.event.inputs.release || github.event.client_payload.release || 'true' }}
-
-  PRERELEASE: ${{ github.event.inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
-
 
 jobs:
 
-  # ============================================================
-  # Menuconfig
-  #
-  # 与原模板保持一致：
-  # 只有 SSH=true 且不是 all 才进入。
-  # ============================================================
-
-  menuconfig:
-    name: "⚙️ Menuconfig"
-
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.ssh == 'true' &&
-      github.event.inputs.device != 'all'
-
-    runs-on: ubuntu-22.04
-
-    steps:
-
-      # --------------------------------------------------------
-      # Checkout
-      # --------------------------------------------------------
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-
-      # --------------------------------------------------------
-      # 最小环境
-      # --------------------------------------------------------
-
-      - name: Init Environment
-        shell: bash
-        run: |
-          set -e
-
-          sudo apt-get update -qq
-
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            wget \
-            bzip2 \
-            python3 \
-            libncurses-dev
-
-          sudo mkdir -p /workdir
-
-          sudo chown -R "$(id -u):$(id -g)" /workdir
-
-
-      # --------------------------------------------------------
-      # Clone ImmortalWrt
-      # --------------------------------------------------------
-
-      - name: Clone Source
-        working-directory: /workdir
-        shell: bash
-        run: |
-          set -e
-
-          git clone \
-            "$REPO_URL" \
-            -b "$REPO_BRANCH" \
-            --single-branch \
-            --filter=blob:none \
-            openwrt
-
-          cd openwrt
-
-          if [ -n "$REPO_COMMIT" ]; then
-            git fetch \
-              --depth=1 \
-              origin \
-              "$REPO_COMMIT"
-
-            git checkout "$REPO_COMMIT"
-          fi
-
-
-      # --------------------------------------------------------
-      # 选择 Config
-      # --------------------------------------------------------
-
-      - name: Set Config
-        shell: bash
-        run: |
-          set -e
-
-          case "$DEVICE_INPUT" in
-            512M)
-              echo "CONFIG_FILE=config/512m.config" >> "$GITHUB_ENV"
-              ;;
-
-            256M)
-              echo "CONFIG_FILE=config/256m.config" >> "$GITHUB_ENV"
-              ;;
-
-            128M)
-              echo "CONFIG_FILE=config/128m.config" >> "$GITHUB_ENV"
-              ;;
-
-            QLB-4Pro)
-              echo "CONFIG_FILE=config/mt7981-QLB-4Pro.config" >> "$GITHUB_ENV"
-              ;;
-
-            *)
-              echo "Unknown device: $DEVICE_INPUT"
-              exit 1
-              ;;
-          esac
-
-
-      # --------------------------------------------------------
-      # Feeds + DIY + Config
-      # --------------------------------------------------------
-
-      - name: Load Feeds and Config
-        shell: bash
-        run: |
-          set -e
-
-          chmod +x \
-            diy-part1.sh \
-            diy-qlb.sh \
-
-          cd "$OPENWRT_DIR"
-
-          # DIY Part 1 必须在 feeds update 前执行
-          "$GITHUB_WORKSPACE/diy-part1.sh"
-
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-          cp -f \
-            "$GITHUB_WORKSPACE/$CONFIG_FILE" \
-            .config
-
-          # 512M / QLB 的设备定义必须在 defconfig 前加入
-          case "$DEVICE_INPUT" in
-            512M)
-              "$GITHUB_WORKSPACE/diy-part2.sh"
-              ;;
-
-            QLB-4Pro)
-              "$GITHUB_WORKSPACE/diy-qlb.sh"
-              ;;
-          esac
-
-          make defconfig
-
-
-      # --------------------------------------------------------
-      # SSH
-      # --------------------------------------------------------
-
-      - name: SSH Session
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 15
-
-
-      # --------------------------------------------------------
-      # 保存 Config
-      # --------------------------------------------------------
-
-      - name: Push Config
-        shell: bash
-        run: |
-          set -e
-
-          cp -f \
-            "$OPENWRT_DIR/.config" \
-            "$GITHUB_WORKSPACE/$CONFIG_FILE"
-
-          cd "$GITHUB_WORKSPACE"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add "$CONFIG_FILE"
-
-          if git diff --cached --quiet; then
-            echo "No config changes."
-            exit 0
-          fi
-
-          git commit \
-            -m "Update config: ${CONFIG_FILE}"
-
-          git pull --rebase origin main
-
-          git push
-
-
-  # ============================================================
-  # Build
-  # ============================================================
-
   build:
-    name: "🔨 Build Firmware"
+    name: Build Cudy TR3000
+    runs-on: ubuntu-24.04
 
-    needs: menuconfig
-
-    if: >
-      always() &&
-      (
-        needs.menuconfig.result == 'success' ||
-        needs.menuconfig.result == 'skipped'
-      )
-
-    runs-on: ubuntu-22.04
+    timeout-minutes: 360
 
     steps:
 
       # ========================================================
-      # Checkout
+      # 1. Checkout ubi_build
       # ========================================================
 
-      - name: Checkout
-        uses: actions/checkout@v4
-
+      - name: Checkout custom repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
 
       # ========================================================
-      # 编译环境
+      # 2. 安装编译依赖
       # ========================================================
 
-      - name: Init Environment
-        shell: bash
+      - name: Install build dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          set -e
+          set -eux
 
-          sudo rm -rf \
-            /etc/apt/sources.list.d/* \
-            /usr/share/dotnet \
-            /usr/local/lib/android \
-            /opt/ghc
+          sudo apt-get update
 
-          sudo apt-get update -qq
-
-          sudo apt-get install -y \
-            libncurses5-dev \
-            libncurses-dev \
-            liblzo2-dev \
-            lzop \
+          sudo apt-get install -y --no-install-recommends \
             ack \
-            antlr3 \
             asciidoc \
             autoconf \
             automake \
@@ -365,8 +99,6 @@ jobs:
             cpio \
             curl \
             device-tree-compiler \
-            ecj \
-            fastjar \
             flex \
             gawk \
             gettext \
@@ -375,7 +107,6 @@ jobs:
             git \
             gnutls-dev \
             gperf \
-            haveged \
             help2man \
             intltool \
             lib32gcc-s1 \
@@ -383,9 +114,9 @@ jobs:
             libelf-dev \
             libglib2.0-dev \
             libgmp3-dev \
-            libltdl-dev \
             libmpc-dev \
             libmpfr-dev \
+            libncurses-dev \
             libpython3-dev \
             libreadline-dev \
             libssl-dev \
@@ -394,9 +125,6 @@ jobs:
             libz-dev \
             lld \
             llvm \
-            lrzsz \
-            mkisofs \
-            msmtp \
             ninja-build \
             p7zip \
             p7zip-full \
@@ -407,598 +135,533 @@ jobs:
             python3-ply \
             python3-docutils \
             python3-pyelftools \
-            qemu-utils \
-            re2c \
             rsync \
-            scons \
-            squashfs-tools \
             subversion \
             swig \
             texinfo \
-            uglifyjs \
             unzip \
-            vim \
             wget \
-            xmlto \
-            xxd \
+            xsltproc \
             zlib1g-dev \
             zstd
 
           sudo apt-get clean
-
-          sudo timedatectl set-timezone "$TZ"
-
-          sudo mkdir -p /workdir
-
-          sudo chown -R \
-            "$(id -u):$(id -g)" \
-            /workdir
-
+          sudo rm -rf /var/lib/apt/lists/*
 
       # ========================================================
-      # Clone ImmortalWrt
+      # 3. 配置 ccache
       # ========================================================
 
-      - name: Clone Source
-        working-directory: /workdir
-        shell: bash
+      - name: Configure ccache
         run: |
-          set -e
+          set -eux
+
+          mkdir -p "$GITHUB_WORKSPACE/.ccache"
+
+          ccache --set-config=cache_dir="$GITHUB_WORKSPACE/.ccache"
+          ccache --set-config=max_size=8G
+          ccache --set-config=compression=true
+          ccache --set-config=compiler_check=content
+
+          ccache --zero-stats
+
+      # ========================================================
+      # 4. 恢复编译缓存
+      # ========================================================
+
+      - name: Restore ccache
+        if: ${{ !inputs.clean }}
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: cudy-immortalwrt-ccache-${{ runner.os }}-${{ hashFiles('config/**', 'dts/**', 'package/**', 'diy-part*.sh') }}
+          restore-keys: |
+            cudy-immortalwrt-ccache-${{ runner.os }}-
+
+      # ========================================================
+      # 5. 创建目录
+      # ========================================================
+
+      - name: Prepare workspace
+        run: |
+          set -eux
+
+          mkdir -p "$CUSTOM_DIR"
+          mkdir -p "$SOURCE_DIR"
+
+          echo "Workspace:"
+          pwd
+
+      # ========================================================
+      # 6. 保存自定义文件
+      # ========================================================
+
+      - name: Prepare custom files
+        run: |
+          set -eux
+
+          cp -a config "$CUSTOM_DIR/" 2>/dev/null || true
+          cp -a dts "$CUSTOM_DIR/" 2>/dev/null || true
+          cp -a package "$CUSTOM_DIR/" 2>/dev/null || true
+          cp -a files "$CUSTOM_DIR/" 2>/dev/null || true
+
+          cp -a diy-part1.sh "$CUSTOM_DIR/" 2>/dev/null || true
+          cp -a diy-part2.sh "$CUSTOM_DIR/" 2>/dev/null || true
+
+          find "$CUSTOM_DIR" -maxdepth 5 -type f | sort
+
+      # ========================================================
+      # 7. 克隆官方 ImmortalWrt
+      # ========================================================
+
+      - name: Clone ImmortalWrt
+        run: |
+          set -eux
+
+          BRANCH="${{ inputs.branch }}"
+
+          if [ -z "$BRANCH" ]; then
+            BRANCH="master"
+          fi
+
+          rm -rf "$SOURCE_DIR"
 
           git clone \
-            "$REPO_URL" \
-            -b "$REPO_BRANCH" \
+            --depth=1 \
             --single-branch \
-            --filter=blob:none \
-            openwrt
+            --branch "$BRANCH" \
+            "$SOURCE_REPO" \
+            "$SOURCE_DIR"
 
-          cd openwrt
+          cd "$SOURCE_DIR"
 
-          if [ -n "$REPO_COMMIT" ]; then
+          echo
+          echo "========================================"
+          echo "ImmortalWrt"
+          echo "========================================"
 
-            git fetch \
-              --depth=1 \
-              origin \
-              "$REPO_COMMIT"
+          git log -1 --oneline
+          git rev-parse HEAD
 
-            git checkout "$REPO_COMMIT"
+      # ========================================================
+      # 8. 保存源码版本
+      # ========================================================
+
+      - name: Generate build information
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
+
+          echo "BUILD_COMMIT=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_FULL_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+
+      # ========================================================
+      # 9. 注入 DTS
+      # ========================================================
+
+      - name: Install custom DTS
+        run: |
+          set -eux
+
+          if [ -d "$CUSTOM_DIR/dts" ]; then
+
+            mkdir -p \
+              "$SOURCE_DIR/target/linux/mediatek/dts"
+
+            cp -a \
+              "$CUSTOM_DIR/dts/." \
+              "$SOURCE_DIR/target/linux/mediatek/dts/"
 
           fi
 
-          echo "========================================"
-          echo "IMMORTALWRT"
-          echo "========================================"
-
-          echo "Branch:"
-          git branch --show-current
-
           echo
-
-          echo "Commit:"
-          git rev-parse HEAD
-
+          echo "Installed DTS:"
+          find \
+            "$SOURCE_DIR/target/linux/mediatek/dts" \
+            -type f \
+            | sort \
+            | tail -100
 
       # ========================================================
-      # DIY Scripts
+      # 10. 注入 package
       # ========================================================
 
-      - name: Prepare DIY Scripts
-        shell: bash
+      - name: Install custom packages
         run: |
-          set -e
+          set -eux
 
-          chmod +x \
-            diy-part1.sh \
-            diy-part2.sh \
-            diy-qlb.sh
+          if [ -d "$CUSTOM_DIR/package" ]; then
 
-          bash -n diy-part1.sh
-          bash -n diy-part2.sh
-          bash -n diy-qlb.sh
+            cp -a \
+              "$CUSTOM_DIR/package/." \
+              "$SOURCE_DIR/package/"
 
+          fi
 
       # ========================================================
-      # Load Feeds
+      # 11. 注入 files
       # ========================================================
 
-      - name: Load Feeds
-        shell: bash
+      - name: Install custom files
         run: |
-          set -e
+          set -eux
 
-          cd "$OPENWRT_DIR"
+          if [ -d "$CUSTOM_DIR/files" ]; then
 
-          # ----------------------------------------------------
-          # Cudy DIY Part 1
-          #
-          # 当前仓库的 diy-part1.sh 明确设计为：
-          # Before Update feeds
-          # ----------------------------------------------------
+            mkdir -p "$SOURCE_DIR/files"
 
-          "$GITHUB_WORKSPACE/diy-part1.sh"
+            cp -a \
+              "$CUSTOM_DIR/files/." \
+              "$SOURCE_DIR/files/"
 
-          # ----------------------------------------------------
-          # Feeds
-          # ----------------------------------------------------
+          fi
+
+      # ========================================================
+      # 12. DIY part 1
+      #
+      # feeds update 之前
+      # ========================================================
+
+      - name: Install DIY part1
+        run: |
+          set -eux
+
+          if [ -f "$CUSTOM_DIR/diy-part1.sh" ]; then
+
+            cp \
+              "$CUSTOM_DIR/diy-part1.sh" \
+              "$SOURCE_DIR/diy-part1.sh"
+
+            sed -i 's/\r$//' \
+              "$SOURCE_DIR/diy-part1.sh"
+
+            chmod +x \
+              "$SOURCE_DIR/diy-part1.sh"
+
+            bash -n \
+              "$SOURCE_DIR/diy-part1.sh"
+
+          fi
+
+      - name: Run DIY part1
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
+
+          if [ -f ./diy-part1.sh ]; then
+            ./diy-part1.sh
+          fi
+
+      # ========================================================
+      # 13. feeds
+      # ========================================================
+
+      - name: Update feeds
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
 
           ./scripts/feeds update -a
 
+      - name: Install feeds
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
+
           ./scripts/feeds install -a
 
-
       # ========================================================
-      # Apply Device DIY
+      # 14. DIY part 2
       #
-      # 必须在 make defconfig 前执行。
+      # feeds 完成之后
       # ========================================================
 
-      - name: Apply Device DIY
-        shell: bash
+      - name: Install DIY part2
         run: |
-          set -e
+          set -eux
 
-          cd "$OPENWRT_DIR"
+          if [ -f "$CUSTOM_DIR/diy-part2.sh" ]; then
 
-          case "$DEVICE_INPUT" in
+            cp \
+              "$CUSTOM_DIR/diy-part2.sh" \
+              "$SOURCE_DIR/diy-part2.sh"
 
-            512M)
-              echo "========================================"
-              echo "Apply TR3000 512M"
-              echo "========================================"
+            sed -i 's/\r$//' \
+              "$SOURCE_DIR/diy-part2.sh"
 
-              "$GITHUB_WORKSPACE/diy-part2.sh"
-              ;;
+            chmod +x \
+              "$SOURCE_DIR/diy-part2.sh"
 
-            256M)
-              echo "========================================"
-              echo "TR3000 256M"
-              echo "========================================"
-              ;;
+            bash -n \
+              "$SOURCE_DIR/diy-part2.sh"
 
-            128M)
-              echo "========================================"
-              echo "TR3000 128M"
-              echo "========================================"
-              ;;
-
-            QLB-4Pro)
-              echo "========================================"
-              echo "Apply QLB-4Pro"
-              echo "========================================"
-
-              "$GITHUB_WORKSPACE/diy-qlb.sh"
-              ;;
-
-            all)
-              echo "========================================"
-              echo "Apply all device definitions"
-              echo "========================================"
-
-              # 512M device definition
-              "$GITHUB_WORKSPACE/diy-part2.sh"
-
-              # QLB-4Pro device definition
-              "$GITHUB_WORKSPACE/diy-qlb.sh"
-              ;;
-
-            *)
-              echo "Unknown device: $DEVICE_INPUT"
-              exit 1
-              ;;
-
-          esac
-
-
-      # ========================================================
-      # Config Hash
-      #
-      # 不再复制错误的 QLB DTS。
-      # 当前仓库已有正确 dts/ 文件。
-      # ========================================================
-
-      - name: Config Hash
-        id: config-hash
-        shell: bash
-        run: |
-          set -e
-
-          cd "$OPENWRT_DIR"
-          
-          cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
-
-          cat ./target/linux/mediatek/dts/mt7981b-QLB*.dts
-          
-          case "$DEVICE_INPUT" in
-
-            512M)
-              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
-              ;;
-
-            256M)
-              CONFIG="$GITHUB_WORKSPACE/config/256m.config"
-              ;;
-
-            128M)
-              CONFIG="$GITHUB_WORKSPACE/config/128m.config"
-              ;;
-
-            QLB-4Pro)
-              CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
-              ;;
-
-            all)
-              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
-              ;;
-
-            *)
-              echo "Unknown device"
-              exit 1
-              ;;
-
-          esac
-
-          cp -f "$CONFIG" .config
-
-          make defconfig
-
-          CONFIG_HASH=$(md5sum .config | awk '{print $1}')
-
-          echo "hash=$CONFIG_HASH" >> "$GITHUB_OUTPUT"
-
-          echo "========================================"
-          echo "CONFIG HASH"
-          echo "========================================"
-
-          echo "$CONFIG_HASH"
-
-
-      # ========================================================
-      # Ccache Cache
-      # ========================================================
-
-      - name: Cache Ccache
-        uses: actions/cache@v4
-        with:
-          path: /workdir/.ccache
-
-          key: >-
-            ${{ runner.os }}-ccache-
-            ${{ env.REPO_BRANCH }}-
-            ${{ steps.config-hash.outputs.hash }}-
-            ${{ hashFiles('diy-*.sh', 'config/*.config', 'dts/*') }}
-
-          restore-keys: |
-            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
-            ${{ runner.os }}-ccache-
-
-
-      # ========================================================
-      # Download Cache
-      #
-      # 不绑定 config。
-      # 不同设备共享下载缓存。
-      # ========================================================
-
-      - name: Cache DL
-        uses: actions/cache@v4
-        with:
-          path: /workdir/openwrt/dl
-
-          key: >-
-            ${{ runner.os }}-openwrt-dl-
-            ${{ env.REPO_BRANCH }}-
-            ${{ hashFiles('feeds.conf.default') }}
-
-          restore-keys: |
-            ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
-            ${{ runner.os }}-openwrt-dl-
-
-
-      # ========================================================
-      # Configure Ccache
-      # ========================================================
-
-      - name: Configure Ccache
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p "$CCACHE_DIR"
-
-          ccache \
-            --set-config=max_size="$CCACHE_MAXSIZE"
-
-          ccache \
-            --set-config=cache_dir="$CCACHE_DIR"
-
-          ccache \
-            --set-config=compression=true
-
-          ccache \
-            --set-config=compression_level=6
-
-          ccache -z
-
-
-      # ========================================================
-      # Download
-      #
-      # 关键优化：
-      #
-      # 原模板：
-      #
-      # 512M -> download
-      # 256M -> download
-      # 128M -> download
-      # QLB  -> download
-      #
-      # 这里：
-      #
-      # 全部设备只 download 一次。
-      # ========================================================
-
-      - name: Download Sources
-        shell: bash
-        run: |
-          set -e
-
-          cd "$OPENWRT_DIR"
-
-          make download -j"$(nproc)"
-
-          find dl \
-            -size -1024c \
-            -exec rm -f {} \;
-
-
-      # ========================================================
-      # Compile Loop
-      # ========================================================
-
-      - name: Compile Loop
-        id: compile
-        shell: bash
-        run: |
-          set -e
-
-          if [ "$DEVICE_INPUT" = "all" ]; then
-            DEVICES="512M 256M 128M QLB-4Pro"
-          else
-            DEVICES="$DEVICE_INPUT"
           fi
 
-          mkdir -p \
-            "$GITHUB_WORKSPACE/firmware_collection"
+      - name: Run DIY part2
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
 
-          cd "$OPENWRT_DIR"
+          if [ -f ./diy-part2.sh ]; then
+            ./diy-part2.sh
+          fi
 
+      # ========================================================
+      # 15. 安装默认 config
+      # ========================================================
 
-          for DEV in $DEVICES; do
+      - name: Install default config
+        run: |
+          set -eux
 
-            echo
-            echo "::group::🚀 Building $DEV"
+          CONFIG="${{ inputs.config }}"
 
-            case "$DEV" in
+          if [ -f "$CUSTOM_DIR/$CONFIG" ]; then
 
-              512M)
-                CONFIG="$GITHUB_WORKSPACE/config/512m.config"
-                ;;
+            cp -f \
+              "$CUSTOM_DIR/$CONFIG" \
+              "$SOURCE_DIR/.config"
 
-              256M)
-                CONFIG="$GITHUB_WORKSPACE/config/256m.config"
-                ;;
-
-              128M)
-                CONFIG="$GITHUB_WORKSPACE/config/128m.config"
-                ;;
-
-              QLB-4Pro)
-                CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
-                ;;
-
-              *)
-                echo "Unknown device: $DEV"
-                exit 1
-                ;;
-
-            esac
-
-
-            echo "========================================"
-            echo "DEVICE: $DEV"
-            echo "CONFIG: $CONFIG"
-            echo "========================================"
-
-
-            # --------------------------------------------------
-            # 写入设备 Config
-            # --------------------------------------------------
+          elif [ -f "$CONFIG" ]; then
 
             cp -f \
               "$CONFIG" \
-              .config
+              "$SOURCE_DIR/.config"
 
+          else
 
-            # --------------------------------------------------
-            # 根据当前 Config 生成最终配置
-            # --------------------------------------------------
+            echo "Config not found:"
+            echo "$CONFIG"
 
-            make defconfig
-
-
-            # --------------------------------------------------
-            # 显示 Target
-            # --------------------------------------------------
-
-            grep '^CONFIG_TARGET_' .config \
-              | grep '=y' \
-              || true
-
-
-            # --------------------------------------------------
-            # 编译
-            # --------------------------------------------------
-
-            if make \
-              -j"$(nproc)" \
-              CC="ccache gcc" \
-              CXX="ccache g++"
-            then
-
-              echo "========================================"
-              echo "✅ $DEV BUILD SUCCESS"
-              echo "========================================"
-
-            else
-
-              echo "========================================"
-              echo "⚠️ $DEV PARALLEL BUILD FAILED"
-              echo "Retry with V=s"
-              echo "========================================"
-
-              make \
-                -j1 \
-                V=s \
-                CC="ccache gcc" \
-                CXX="ccache g++"
-
-            fi
-
-
-            # --------------------------------------------------
-            # 收集当前设备
-            # --------------------------------------------------
-
-            mkdir -p \
-              "$GITHUB_WORKSPACE/firmware_collection/$DEV"
-
-
-            find bin/targets \
+            find "$CUSTOM_DIR/config" \
               -type f \
-              \( \
-                -name "*.bin" \
-                -o -name "*.itb" \
-                -o -name "*.img" \
-                -o -name "*.tar" \
-                -o -name "*.gz" \
-                -o -name "*.zip" \
-              \) \
-              -exec cp -f {} \
-              "$GITHUB_WORKSPACE/firmware_collection/$DEV/" \;
+              2>/dev/null \
+              | sort
 
+            exit 1
 
-            echo "::endgroup::"
-
-          done
-
-
-          echo "status=success" >> "$GITHUB_OUTPUT"
-
+          fi
 
       # ========================================================
-      # Ccache Statistics
+      # 16. SSH menuconfig
+      #
+      # 开启后：
+      #
+      # SSH -> cd openwrt
+      #      make menuconfig
+      #
+      # 保存退出
+      # Ctrl+D / exit
+      #
+      # Actions 会继续执行
       # ========================================================
 
-      - name: Ccache Statistics
-        if: always()
-        shell: bash
-        run: |
-          ccache -s || true
-
-
-      # ========================================================
-      # 上传 Artifact
-      # ========================================================
-
-      - name: Upload Artifacts
-        if: steps.compile.outputs.status == 'success'
-        uses: actions/upload-artifact@v4
+      - name: SSH connection to Actions
+        if: ${{ inputs.ssh }}
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 120
         with:
-          name: ImmortalWrt_${{ env.DEVICE_INPUT }}
-          path: ${{ github.workspace }}/firmware_collection/
-          if-no-files-found: error
-          compression-level: 9
-
+          limit-access-to-actor: true
 
       # ========================================================
-      # Release
+      # 17. 检查 menuconfig 结果
       # ========================================================
 
-      - name: Generate Release
-        id: tag
-        if: >
-          steps.compile.outputs.status == 'success' &&
-          env.UPLOAD_RELEASE == 'true'
-        shell: bash
+      - name: Check configuration
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
-          set -e
+          set -eux
 
-          BUILD_TIME=$(date +"%Y.%m.%d-%H%M")
+          echo
+          echo "========================================"
+          echo "Current target"
+          echo "========================================"
 
-          echo "release_tag=$BUILD_TIME" >> "$GITHUB_OUTPUT"
+          grep '^CONFIG_TARGET' .config || true
 
-          cat > release.txt << EOF
-          ## 📦 ImmortalWrt Firmware
+          echo
+          echo "========================================"
+          echo "Selected packages"
+          echo "========================================"
 
-          **Build Time:** $BUILD_TIME
+          grep '^CONFIG_PACKAGE_.*=y' .config \
+            | sort \
+            | head -200 || true
 
-          **Branch:** $REPO_BRANCH
+      # ========================================================
+      # 18. 最终 defconfig
+      # ========================================================
 
-          **Commit:** $(cd "$OPENWRT_DIR" && git rev-parse --short HEAD)
+      - name: Generate final config
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
 
-          **Device:** $DEVICE_INPUT
+          make defconfig
 
-          **Repository:** $REPO_URL
+          cp \
+            .config \
+            ../final.config
+
+      # ========================================================
+      # 19. 下载源码
+      # ========================================================
+
+      - name: Download sources
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
+
+          make download \
+            -j${{ inputs.make_jobs }}
+
+      # ========================================================
+      # 20. 编译工具链
+      # ========================================================
+
+      - name: Build toolchain
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -eux
+
+          make toolchain/compile \
+            -j${{ inputs.make_jobs }} \
+            V=s
+
+      # ========================================================
+      # 21. 编译固件
+      # ========================================================
+
+      - name: Build firmware
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -o pipefail
+
+          make \
+            -j${{ inputs.make_jobs }} \
+            V=s \
+            2>&1 | tee ../build.log
+
+      # ========================================================
+      # 22. 固件信息
+      # ========================================================
+
+      - name: Generate firmware information
+        if: ${{ success() }}
+        run: |
+          set -eux
+
+          TARGET_DIR="$SOURCE_DIR/bin/targets"
+
+          cat > "$TARGET_DIR/build-info.txt" <<EOF
+          ========================================
+          Cudy TR3000 ImmortalWrt
+          ========================================
+
+          Build date:
+          $BUILD_DATE
+
+          Commit:
+          $BUILD_FULL_COMMIT
+
+          Config:
+          ${{ inputs.config }}
+
+          Jobs:
+          ${{ inputs.make_jobs }}
+
+          ========================================
+          Firmware
+          ========================================
           EOF
 
-          echo "status=success" >> "$GITHUB_OUTPUT"
-
+          find "$TARGET_DIR" \
+            -type f \
+            | sort >> "$TARGET_DIR/build-info.txt"
 
       # ========================================================
-      # Upload Release
+      # 23. 显示固件
       # ========================================================
 
-      - name: Upload Release
-        if: steps.tag.outputs.status == 'success'
-        uses: softprops/action-gh-release@v2
+      - name: List firmware
+        if: ${{ always() }}
+        run: |
+          echo
+          echo "========================================"
+          echo "Firmware"
+          echo "========================================"
+
+          find \
+            "$SOURCE_DIR/bin/targets" \
+            -type f \
+            \( \
+              -name "*.bin" \
+              -o -name "*.itb" \
+              -o -name "*.ubi" \
+              -o -name "*.img" \
+              -o -name "*.tar.gz" \
+            \) \
+            -exec ls -lh {} \; \
+            2>/dev/null || true
+
+      # ========================================================
+      # 24. ccache
+      # ========================================================
+
+      - name: Ccache statistics
+        if: ${{ always() }}
+        run: |
+          ccache --show-stats || true
+
+      # ========================================================
+      # 25. 磁盘
+      # ========================================================
+
+      - name: Disk usage
+        if: ${{ always() }}
+        run: |
+          df -h
+
+      # ========================================================
+      # 26. 上传固件
+      # ========================================================
+
+      - name: Upload firmware
+        if: ${{ success() }}
+        uses: actions/upload-artifact@v4
         with:
-          tag_name: ${{ steps.tag.outputs.release_tag }}
-          body_path: release.txt
-          prerelease: ${{ env.PRERELEASE == 'true' }}
-
-          files: |
-            firmware_collection/**/*.bin
-            firmware_collection/**/*.itb
-            firmware_collection/**/*.img
-            firmware_collection/**/*.tar
-            firmware_collection/**/*.gz
-            firmware_collection/**/*.zip
-
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+          name: Cudy-TR3000-ImmortalWrt-${{ env.BUILD_COMMIT }}
+          path: |
+            openwrt/bin/targets/**/*
+          if-no-files-found: error
+          retention-days: 14
 
       # ========================================================
-      # 清理旧 Workflow
+      # 27. 上传最终 config
       # ========================================================
 
-      - name: Clean Old Runs
-        uses: Mattraks/delete-workflow-runs@v2
+      - name: Upload final config
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
-          retain_days: 0
-          keep_minimum_runs: 9
-
+          name: Cudy-TR3000-config-${{ github.run_number }}
+          path: |
+            final.config
+          if-no-files-found: ignore
+          retention-days: 14
 
       # ========================================================
-      # 清理旧 Release
+      # 28. 上传日志
       # ========================================================
 
-      - name: Clean Old Releases
-        if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-        uses: dev-drprasad/delete-older-releases@v0.3.4
+      - name: Upload build log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
         with:
-          keep_latest: 3
-          delete_tags: true
-
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          name: Cudy-TR3000-build-log-${{ github.run_number }}
+          path: |
+            build.log
+          if-no-files-found: ignore
+          retention-days: 14
+```
