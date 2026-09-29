@@ -1,89 +1,371 @@
-name: Cudy TR3000 ImmortalWrt Builder
+name: ImmortalWrt MT798x Cloud Builder
 
 on:
   workflow_dispatch:
     inputs:
 
-      branch:
-        description: "ImmortalWrt branch"
+      mode:
+        description: "编译模式"
         required: true
-        default: "master"
-        type: string
+        type: choice
+        default: build
+        options:
+          - build
+          - menuconfig
 
-      config:
-        description: "Default config file"
+      device:
+        description: "设备配置"
         required: true
-        default: "config/mt7981-QLB-4Pro.config"
+        type: choice
+        default: QLB-4Pro
+        options:
+          - QLB-4Pro
+          - 128M
+          - 256M
+          - 512M
+
+      repo:
+        description: "ImmortalWrt 源码仓库"
+        required: true
         type: string
+        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6"
+
+      branch:
+        description: "源码分支"
+        required: true
+        type: string
+        default: "openwrt-24.10-6.6"
+
+      commit:
+        description: "指定 Commit / Tag / Branch，留空使用最新"
+        required: false
+        type: string
+        default: ""
 
       ssh:
-        description: "Enable SSH for menuconfig"
+        description: "启动 SSH 调试 / Menuconfig"
         required: true
-        default: false
         type: boolean
+        default: false
 
       clean:
-        description: "Clean build cache"
+        description: "清理编译缓存"
         required: true
-        default: false
         type: boolean
-
-      make_jobs:
-        description: "Compile jobs"
-        required: true
-        default: "4"
-        type: string
-
-  repository_dispatch:
-    types:
-      - Source Code Update
-
-permissions:
-  contents: read
+        default: false
 
 concurrency:
-  group: cudy-immortalwrt-${{ github.ref }}
+  group: immortalwrt-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  SOURCE_REPO: https://github.com/immortalwrt/immortalwrt.git
-  SOURCE_DIR: openwrt
-  CUSTOM_DIR: cudy
   TZ: Asia/Shanghai
+  WORKDIR: /workdir
+  OPENWRT_DIR: /workdir/openwrt
+  CUDY_DIR: ${{ github.workspace }}/cudy
+  CCACHE_DIR: /workdir/.ccache
+  CCACHE_MAXSIZE: 8G
 
 jobs:
 
-  build:
-    name: Build Cudy TR3000
-    runs-on: ubuntu-24.04
+  # ============================================================
+  # Menuconfig / SSH
+  # ============================================================
 
-    timeout-minutes: 360
+  menuconfig:
+    name: "⚙️ Menuconfig / SSH"
+    if: |
+      github.event.inputs.mode == 'menuconfig' ||
+      github.event.inputs.ssh == 'true'
+
+    runs-on: ubuntu-22.04
 
     steps:
 
-      # ========================================================
-      # 1. Checkout ubi_build
-      # ========================================================
+      - name: Checkout Custom Repository
+        uses: actions/checkout@v4
 
-      - name: Checkout custom repository
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 1
-
-      # ========================================================
-      # 2. 安装编译依赖
-      # ========================================================
-
-      - name: Install build dependencies
+      - name: Install Basic Dependencies
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          sudo apt-get update
+
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            wget \
+            curl \
+            rsync \
+            unzip \
+            zip \
+            bzip2 \
+            xz-utils \
+            python3 \
+            python3-pip \
+            libncurses-dev \
+            zlib1g-dev \
+            libssl-dev \
+            gawk \
+            gettext \
+            file \
+            patch \
+            diffutils \
+            ccache
+
+      - name: Prepare Work Directory
+        run: |
+          sudo mkdir -p "$WORKDIR"
+          sudo chown -R "$USER:$USER" "$WORKDIR"
+
+      - name: Clone ImmortalWrt
+        working-directory: /workdir
+        run: |
+          set -e
+
+          git clone \
+            --depth=1 \
+            --single-branch \
+            -b "${{ github.event.inputs.branch }}" \
+            "${{ github.event.inputs.repo }}" \
+            openwrt
+
+          cd openwrt
+
+          if [ -n "${{ github.event.inputs.commit }}" ]; then
+            git fetch --depth=1 origin "${{ github.event.inputs.commit }}"
+            git checkout "${{ github.event.inputs.commit }}"
+          fi
+
+          echo "===== SOURCE ====="
+          git remote -v
+          git log -1 --oneline
+
+      - name: Prepare Custom Files
+        run: |
           set -eux
+
+          OPENWRT="$OPENWRT_DIR"
+          CUDY="$CUDY_DIR"
+
+          echo "===== CUDY TREE ====="
+          find "$CUDY" -maxdepth 3 -type f | sort || true
+
+          # ----------------------------------------------------
+          # DTS
+          # ----------------------------------------------------
+
+          if [ -d "$CUDY/dts" ]; then
+            mkdir -p "$OPENWRT/target/linux/mediatek/dts"
+            cp -a "$CUDY/dts/." \
+              "$OPENWRT/target/linux/mediatek/dts/"
+          fi
+
+          # ----------------------------------------------------
+          # packages
+          # ----------------------------------------------------
+
+          if [ -d "$CUDY/package" ]; then
+            mkdir -p "$OPENWRT/package"
+            cp -a "$CUDY/package/." \
+              "$OPENWRT/package/"
+          fi
+
+          # ----------------------------------------------------
+          # config
+          # ----------------------------------------------------
+
+          case "${{ github.event.inputs.device }}" in
+
+            QLB-4Pro)
+              CONFIG_FILE="$CUDY/config/mt7981-QLB-4Pro.config"
+              ;;
+
+            128M)
+              CONFIG_FILE="$CUDY/config/128m.config"
+              ;;
+
+            256M)
+              CONFIG_FILE="$CUDY/config/256m.config"
+              ;;
+
+            512M)
+              CONFIG_FILE="$CUDY/config/512m.config"
+              ;;
+
+          esac
+
+          if [ -f "$CONFIG_FILE" ]; then
+            cp -f "$CONFIG_FILE" "$OPENWRT/.config"
+            echo "Loaded config: $CONFIG_FILE"
+          else
+            echo "WARNING: config not found:"
+            echo "$CONFIG_FILE"
+          fi
+
+          # ----------------------------------------------------
+          # shell scripts
+          # ----------------------------------------------------
+
+          if [ -d "$CUDY/sh" ]; then
+
+            find "$CUDY/sh" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.sh" \
+              -exec chmod +x {} \;
+
+            cp -a "$CUDY/sh/." "$OPENWRT/"
+
+          fi
+
+          # ----------------------------------------------------
+          # 兼容仓库里已经存在的 diy 脚本
+          # ----------------------------------------------------
+
+          if [ -f "$OPENWRT/diy-part1.sh" ]; then
+            chmod +x "$OPENWRT/diy-part1.sh"
+          fi
+
+          if [ -f "$OPENWRT/diy-part2.sh" ]; then
+            chmod +x "$OPENWRT/diy-part2.sh"
+          fi
+
+          echo "===== OPENWRT CUSTOM FILES ====="
+
+          find "$OPENWRT" \
+            \( -path "$OPENWRT/.git" -o -path "$OPENWRT/dl" \) \
+            -prune -o \
+            -type f \
+            \( -name "*.dts" -o -name "*.sh" -o -name ".config" \) \
+            -print | head -100
+
+      - name: Update Feeds
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Run DIY Part 1
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          if [ -f "./diy-part1.sh" ]; then
+            chmod +x ./diy-part1.sh
+            ./diy-part1.sh
+          else
+            echo "diy-part1.sh not found, skip."
+          fi
+
+      - name: Run DIY Part 2
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          if [ -f "./diy-part2.sh" ]; then
+            chmod +x ./diy-part2.sh
+            ./diy-part2.sh
+          else
+            echo "diy-part2.sh not found, skip."
+          fi
+
+      - name: Generate Defconfig
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          if [ -f ".config" ]; then
+            make defconfig
+          else
+            echo "ERROR: .config not found"
+            exit 1
+          fi
+
+      - name: SSH Menuconfig
+        uses: mxschmitt/action-tmate@v3
+        timeout-minutes: 30
+
+      - name: Save Config
+        if: always()
+        run: |
+          set -e
+
+          if [ -f "$OPENWRT_DIR/.config" ]; then
+
+            mkdir -p "$GITHUB_WORKSPACE/output"
+
+            cp -f \
+              "$OPENWRT_DIR/.config" \
+              "$GITHUB_WORKSPACE/output/.config"
+
+            cp -f \
+              "$OPENWRT_DIR/.config" \
+              "$GITHUB_WORKSPACE/output/${{ github.event.inputs.device }}.config"
+
+          fi
+
+      - name: Upload Config
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: menuconfig-${{ github.event.inputs.device }}
+          path: |
+            output/.config
+            output/*.config
+          if-no-files-found: warn
+
+
+  # ============================================================
+  # Build
+  # ============================================================
+
+  build:
+    name: "🔨 Build ${{ github.event.inputs.device }}"
+
+    needs: menuconfig
+
+    if: |
+      always() &&
+      (
+        needs.menuconfig.result == 'success' ||
+        needs.menuconfig.result == 'skipped'
+      ) &&
+      github.event.inputs.mode == 'build'
+
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      # --------------------------------------------------------
+      # Checkout
+      # --------------------------------------------------------
+
+      - name: Checkout Custom Repository
+        uses: actions/checkout@v4
+
+      # --------------------------------------------------------
+      # Dependencies
+      # --------------------------------------------------------
+
+      - name: Install Build Dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -e
+
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc
 
           sudo apt-get update
 
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get install -y \
             ack \
+            antlr3 \
             asciidoc \
             autoconf \
             automake \
@@ -98,6 +380,8 @@ jobs:
             cpio \
             curl \
             device-tree-compiler \
+            ecj \
+            fastjar \
             flex \
             gawk \
             gettext \
@@ -106,6 +390,7 @@ jobs:
             git \
             gnutls-dev \
             gperf \
+            haveged \
             help2man \
             intltool \
             lib32gcc-s1 \
@@ -113,6 +398,7 @@ jobs:
             libelf-dev \
             libglib2.0-dev \
             libgmp3-dev \
+            libltdl-dev \
             libmpc-dev \
             libmpfr-dev \
             libncurses-dev \
@@ -124,9 +410,8 @@ jobs:
             libz-dev \
             lld \
             llvm \
+            make \
             ninja-build \
-            p7zip \
-            p7zip-full \
             patch \
             pkgconf \
             python3 \
@@ -135,531 +420,336 @@ jobs:
             python3-docutils \
             python3-pyelftools \
             rsync \
+            scons \
+            squashfs-tools \
             subversion \
             swig \
             texinfo \
             unzip \
             wget \
             xsltproc \
+            xxd \
             zlib1g-dev \
             zstd
 
-          sudo apt-get clean
-          sudo rm -rf /var/lib/apt/lists/*
+          sudo timedatectl set-timezone "$TZ"
 
-      # ========================================================
-      # 3. 配置 ccache
-      # ========================================================
+      # --------------------------------------------------------
+      # Workdir
+      # --------------------------------------------------------
 
-      - name: Configure ccache
+      - name: Prepare Work Directory
         run: |
           set -eux
 
-          mkdir -p "$GITHUB_WORKSPACE/.ccache"
+          sudo mkdir -p "$WORKDIR"
+          sudo chown -R "$USER:$USER" "$WORKDIR"
 
-          ccache --set-config=cache_dir="$GITHUB_WORKSPACE/.ccache"
-          ccache --set-config=max_size=8G
-          ccache --set-config=compression=true
-          ccache --set-config=compiler_check=content
-
-          ccache --zero-stats
-
-      # ========================================================
-      # 4. 恢复编译缓存
-      # ========================================================
-
-      - name: Restore ccache
-        if: ${{ !inputs.clean }}
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: cudy-immortalwrt-ccache-${{ runner.os }}-${{ hashFiles('config/**', 'dts/**', 'package/**', 'diy-part*.sh') }}
-          restore-keys: |
-            cudy-immortalwrt-ccache-${{ runner.os }}-
-
-      # ========================================================
-      # 5. 创建目录
-      # ========================================================
-
-      - name: Prepare workspace
-        run: |
-          set -eux
-
-          mkdir -p "$CUSTOM_DIR"
-          mkdir -p "$SOURCE_DIR"
-
-          echo "Workspace:"
-          pwd
-
-      # ========================================================
-      # 6. 保存自定义文件
-      # ========================================================
-
-      - name: Prepare custom files
-        run: |
-          set -eux
-
-          cp -a config "$CUSTOM_DIR/" 2>/dev/null || true
-          cp -a dts "$CUSTOM_DIR/" 2>/dev/null || true
-          cp -a package "$CUSTOM_DIR/" 2>/dev/null || true
-          cp -a files "$CUSTOM_DIR/" 2>/dev/null || true
-
-          cp -a diy-part1.sh "$CUSTOM_DIR/" 2>/dev/null || true
-          cp -a diy-part2.sh "$CUSTOM_DIR/" 2>/dev/null || true
-
-          find "$CUSTOM_DIR" -maxdepth 5 -type f | sort
-
-      # ========================================================
-      # 7. 克隆官方 ImmortalWrt
-      # ========================================================
+      # --------------------------------------------------------
+      # Clone
+      # --------------------------------------------------------
 
       - name: Clone ImmortalWrt
+        working-directory: /workdir
         run: |
-          set -eux
-
-          BRANCH="${{ inputs.branch }}"
-
-          if [ -z "$BRANCH" ]; then
-            BRANCH="master"
-          fi
-
-          rm -rf "$SOURCE_DIR"
+          set -e
 
           git clone \
             --depth=1 \
             --single-branch \
-            --branch "$BRANCH" \
-            "$SOURCE_REPO" \
-            "$SOURCE_DIR"
+            -b "${{ github.event.inputs.branch }}" \
+            "${{ github.event.inputs.repo }}" \
+            openwrt
 
-          cd "$SOURCE_DIR"
+          cd openwrt
 
-          echo
-          echo "========================================"
-          echo "ImmortalWrt"
-          echo "========================================"
+          if [ -n "${{ github.event.inputs.commit }}" ]; then
+            git fetch --depth=1 origin "${{ github.event.inputs.commit }}"
+            git checkout "${{ github.event.inputs.commit }}"
+          fi
 
+          echo "===== SOURCE ====="
+          git remote -v
           git log -1 --oneline
-          git rev-parse HEAD
 
-      # ========================================================
-      # 8. 保存源码版本
-      # ========================================================
+      # --------------------------------------------------------
+      # Copy custom files
+      # --------------------------------------------------------
 
-      - name: Generate build information
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Copy Cudy Custom Files
         run: |
           set -eux
 
-          echo "BUILD_COMMIT=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_ENV"
-          echo "BUILD_FULL_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-          echo "BUILD_DATE=$(date '+%Y-%m-%d %H:%M:%S')" >> "$GITHUB_ENV"
+          OPENWRT="$OPENWRT_DIR"
+          CUDY="$CUDY_DIR"
 
-      # ========================================================
-      # 9. 注入 DTS
-      # ========================================================
+          # DTS
+          if [ -d "$CUDY/dts" ]; then
+            mkdir -p "$OPENWRT/target/linux/mediatek/dts"
+            cp -a "$CUDY/dts/." \
+              "$OPENWRT/target/linux/mediatek/dts/"
+          fi
 
-      - name: Install custom DTS
-        run: |
-          set -eux
+          # Packages
+          if [ -d "$CUDY/package" ]; then
+            mkdir -p "$OPENWRT/package"
+            cp -a "$CUDY/package/." \
+              "$OPENWRT/package/"
+          fi
 
-          if [ -d "$CUSTOM_DIR/dts" ]; then
+          # Config
+          case "${{ github.event.inputs.device }}" in
 
-            mkdir -p \
-              "$SOURCE_DIR/target/linux/mediatek/dts"
+            QLB-4Pro)
+              CONFIG_FILE="$CUDY/config/mt7981-QLB-4Pro.config"
+              ;;
 
-            cp -a \
-              "$CUSTOM_DIR/dts/." \
-              "$SOURCE_DIR/target/linux/mediatek/dts/"
+            128M)
+              CONFIG_FILE="$CUDY/config/128m.config"
+              ;;
+
+            256M)
+              CONFIG_FILE="$CUDY/config/256m.config"
+              ;;
+
+            512M)
+              CONFIG_FILE="$CUDY/config/512m.config"
+              ;;
+
+          esac
+
+          if [ ! -f "$CONFIG_FILE" ]; then
+            echo "ERROR: config not found:"
+            echo "$CONFIG_FILE"
+            exit 1
+          fi
+
+          cp -f "$CONFIG_FILE" "$OPENWRT/.config"
+
+          # Shell scripts
+          if [ -d "$CUDY/sh" ]; then
+
+            find "$CUDY/sh" \
+              -maxdepth 1 \
+              -type f \
+              -name "*.sh" \
+              -exec chmod +x {} \;
+
+            cp -a "$CUDY/sh/." "$OPENWRT/"
 
           fi
 
-          echo
-          echo "Installed DTS:"
-          find \
-            "$SOURCE_DIR/target/linux/mediatek/dts" \
-            -type f \
-            | sort \
-            | tail -100
-
-      # ========================================================
-      # 10. 注入 package
-      # ========================================================
-
-      - name: Install custom packages
-        run: |
-          set -eux
-
-          if [ -d "$CUSTOM_DIR/package" ]; then
-
-            cp -a \
-              "$CUSTOM_DIR/package/." \
-              "$SOURCE_DIR/package/"
-
+          if [ -f "$OPENWRT/diy-part1.sh" ]; then
+            chmod +x "$OPENWRT/diy-part1.sh"
           fi
 
-      # ========================================================
-      # 11. 注入 files
-      # ========================================================
-
-      - name: Install custom files
-        run: |
-          set -eux
-
-          if [ -d "$CUSTOM_DIR/files" ]; then
-
-            mkdir -p "$SOURCE_DIR/files"
-
-            cp -a \
-              "$CUSTOM_DIR/files/." \
-              "$SOURCE_DIR/files/"
-
+          if [ -f "$OPENWRT/diy-part2.sh" ]; then
+            chmod +x "$OPENWRT/diy-part2.sh"
           fi
 
-      # ========================================================
-      # 12. DIY part 1
-      #
-      # feeds update 之前
-      # ========================================================
+      # --------------------------------------------------------
+      # Feeds
+      # --------------------------------------------------------
 
-      - name: Install DIY part1
+      - name: Update Feeds
+        working-directory: /workdir/openwrt
         run: |
-          set -eux
+          set -e
 
-          if [ -f "$CUSTOM_DIR/diy-part1.sh" ]; then
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
-            cp \
-              "$CUSTOM_DIR/diy-part1.sh" \
-              "$SOURCE_DIR/diy-part1.sh"
+      # --------------------------------------------------------
+      # DIY 1
+      # --------------------------------------------------------
 
-            sed -i 's/\r$//' \
-              "$SOURCE_DIR/diy-part1.sh"
-
-            chmod +x \
-              "$SOURCE_DIR/diy-part1.sh"
-
-            bash -n \
-              "$SOURCE_DIR/diy-part1.sh"
-
-          fi
-
-      - name: Run DIY part1
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Run DIY Part 1
+        working-directory: /workdir/openwrt
         run: |
-          set -eux
+          set -e
 
-          if [ -f ./diy-part1.sh ]; then
+          if [ -f "./diy-part1.sh" ]; then
+            chmod +x ./diy-part1.sh
             ./diy-part1.sh
           fi
 
-      # ========================================================
-      # 13. feeds
-      # ========================================================
+      # --------------------------------------------------------
+      # DIY 2
+      # --------------------------------------------------------
 
-      - name: Update feeds
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Run DIY Part 2
+        working-directory: /workdir/openwrt
         run: |
-          set -eux
+          set -e
 
-          ./scripts/feeds update -a
-
-      - name: Install feeds
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -eux
-
-          ./scripts/feeds install -a
-
-      # ========================================================
-      # 14. DIY part 2
-      #
-      # feeds 完成之后
-      # ========================================================
-
-      - name: Install DIY part2
-        run: |
-          set -eux
-
-          if [ -f "$CUSTOM_DIR/diy-part2.sh" ]; then
-
-            cp \
-              "$CUSTOM_DIR/diy-part2.sh" \
-              "$SOURCE_DIR/diy-part2.sh"
-
-            sed -i 's/\r$//' \
-              "$SOURCE_DIR/diy-part2.sh"
-
-            chmod +x \
-              "$SOURCE_DIR/diy-part2.sh"
-
-            bash -n \
-              "$SOURCE_DIR/diy-part2.sh"
-
-          fi
-
-      - name: Run DIY part2
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -eux
-
-          if [ -f ./diy-part2.sh ]; then
+          if [ -f "./diy-part2.sh" ]; then
+            chmod +x ./diy-part2.sh
             ./diy-part2.sh
           fi
 
-      # ========================================================
-      # 15. 安装默认 config
-      # ========================================================
+      # --------------------------------------------------------
+      # Defconfig
+      # --------------------------------------------------------
 
-      - name: Install default config
+      - name: Make Defconfig
+        working-directory: /workdir/openwrt
         run: |
-          set -eux
-
-          CONFIG="${{ inputs.config }}"
-
-          if [ -f "$CUSTOM_DIR/$CONFIG" ]; then
-
-            cp -f \
-              "$CUSTOM_DIR/$CONFIG" \
-              "$SOURCE_DIR/.config"
-
-          elif [ -f "$CONFIG" ]; then
-
-            cp -f \
-              "$CONFIG" \
-              "$SOURCE_DIR/.config"
-
-          else
-
-            echo "Config not found:"
-            echo "$CONFIG"
-
-            find "$CUSTOM_DIR/config" \
-              -type f \
-              2>/dev/null \
-              | sort
-
-            exit 1
-
-          fi
-
-      # ========================================================
-      # 16. SSH menuconfig
-      #
-      # 开启后：
-      #
-      # SSH -> cd openwrt
-      #      make menuconfig
-      #
-      # 保存退出
-      # Ctrl+D / exit
-      #
-      # Actions 会继续执行
-      # ========================================================
-
-      - name: SSH connection to Actions
-        if: ${{ inputs.ssh }}
-        uses: mxschmitt/action-tmate@v3
-        timeout-minutes: 120
-        with:
-          limit-access-to-actor: true
-
-      # ========================================================
-      # 17. 检查 menuconfig 结果
-      # ========================================================
-
-      - name: Check configuration
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -eux
-
-          echo
-          echo "========================================"
-          echo "Current target"
-          echo "========================================"
-
-          grep '^CONFIG_TARGET' .config || true
-
-          echo
-          echo "========================================"
-          echo "Selected packages"
-          echo "========================================"
-
-          grep '^CONFIG_PACKAGE_.*=y' .config \
-            | sort \
-            | head -200 || true
-
-      # ========================================================
-      # 18. 最终 defconfig
-      # ========================================================
-
-      - name: Generate final config
-        working-directory: ${{ env.SOURCE_DIR }}
-        run: |
-          set -eux
+          set -e
 
           make defconfig
 
-          cp \
-            .config \
-            ../final.config
+          echo "===== TARGET ====="
+          grep -E \
+            'CONFIG_TARGET_|CONFIG_TARGET_DEVICE_' \
+            .config || true
 
-      # ========================================================
-      # 19. 下载源码
-      # ========================================================
+      # --------------------------------------------------------
+      # Config hash
+      # --------------------------------------------------------
 
-      - name: Download sources
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Calculate Config Hash
+        id: config_hash
+        working-directory: /workdir/openwrt
         run: |
-          set -eux
+          HASH=$(md5sum .config | awk '{print $1}')
 
-          make download \
-            -j${{ inputs.make_jobs }}
+          echo "hash=$HASH" >> "$GITHUB_OUTPUT"
 
-      # ========================================================
-      # 20. 编译工具链
-      # ========================================================
+          echo "Config MD5:"
+          echo "$HASH"
 
-      - name: Build toolchain
-        working-directory: ${{ env.SOURCE_DIR }}
+      # --------------------------------------------------------
+      # Ccache
+      # --------------------------------------------------------
+
+      - name: Restore Ccache
+        if: github.event.inputs.clean != 'true'
+        uses: actions/cache@v4
+        with:
+          path: /workdir/.ccache
+          key: ${{ runner.os }}-ccache-${{ github.event.inputs.branch }}-${{ steps.config_hash.outputs.hash }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ github.event.inputs.branch }}-
+
+      # --------------------------------------------------------
+      # Download cache
+      # --------------------------------------------------------
+
+      - name: Restore Download Cache
+        if: github.event.inputs.clean != 'true'
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt/dl
+          key: ${{ runner.os }}-openwrt-dl-${{ github.event.inputs.branch }}
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-
+
+      # --------------------------------------------------------
+      # Configure Ccache
+      # --------------------------------------------------------
+
+      - name: Configure Ccache
         run: |
-          set -eux
+          set -e
 
-          make toolchain/compile \
-            -j${{ inputs.make_jobs }} \
+          mkdir -p "$CCACHE_DIR"
+
+          ccache --set-config=cache_dir="$CCACHE_DIR"
+          ccache --set-config=max_size="$CCACHE_MAXSIZE"
+          ccache --set-config=compression=true
+          ccache --set-config=compression_level=6
+
+          ccache -z
+
+      # --------------------------------------------------------
+      # Download Sources
+      # --------------------------------------------------------
+
+      - name: Download Sources
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          make download -j$(nproc) V=s
+
+      # --------------------------------------------------------
+      # Compile
+      # --------------------------------------------------------
+
+      - name: Compile Firmware
+        working-directory: /workdir/openwrt
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "CPU: $(nproc)"
+          echo "DEVICE: ${{ github.event.inputs.device }}"
+          echo "BRANCH: ${{ github.event.inputs.branch }}"
+          echo "========================================"
+
+          make -j$(nproc) \
+            BUILD_LOG=1 \
             V=s
 
-      # ========================================================
-      # 21. 编译固件
-      # ========================================================
+      # --------------------------------------------------------
+      # Ccache Statistics
+      # --------------------------------------------------------
 
-      - name: Build firmware
-        working-directory: ${{ env.SOURCE_DIR }}
+      - name: Ccache Statistics
+        if: always()
         run: |
-          set -o pipefail
+          ccache -s || true
 
-          make \
-            -j${{ inputs.make_jobs }} \
-            V=s \
-            2>&1 | tee ../build.log
+      # --------------------------------------------------------
+      # Collect Firmware
+      # --------------------------------------------------------
 
-      # ========================================================
-      # 22. 固件信息
-      # ========================================================
-
-      - name: Generate firmware information
-        if: ${{ success() }}
+      - name: Collect Firmware
+        if: always()
         run: |
           set -eux
 
-          TARGET_DIR="$SOURCE_DIR/bin/targets"
+          mkdir -p "$GITHUB_WORKSPACE/output"
 
-          cat > "$TARGET_DIR/build-info.txt" <<EOF
-          ========================================
-          Cudy TR3000 ImmortalWrt
-          ========================================
+          if [ -d "$OPENWRT_DIR/bin/targets" ]; then
 
-          Build date:
-          $BUILD_DATE
+            cp -a \
+              "$OPENWRT_DIR/bin/targets/." \
+              "$GITHUB_WORKSPACE/output/"
 
-          Commit:
-          $BUILD_FULL_COMMIT
+          fi
 
-          Config:
-          ${{ inputs.config }}
+          cp -f \
+            "$OPENWRT_DIR/.config" \
+            "$GITHUB_WORKSPACE/output/.config"
 
-          Jobs:
-          ${{ inputs.make_jobs }}
+          if [ -f "$OPENWRT_DIR/.config.old" ]; then
+            cp -f \
+              "$OPENWRT_DIR/.config.old" \
+              "$GITHUB_WORKSPACE/output/.config.old"
+          fi
 
-          ========================================
-          Firmware
-          ========================================
-          EOF
+          {
+            echo "Device: ${{ github.event.inputs.device }}"
+            echo "Repository: ${{ github.event.inputs.repo }}"
+            echo "Branch: ${{ github.event.inputs.branch }}"
+            echo "Commit: $(cd "$OPENWRT_DIR" && git rev-parse HEAD)"
+            echo "Build time: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+            echo "Runner: $(uname -a)"
+          } > "$GITHUB_WORKSPACE/output/build-info.txt"
 
-          find "$TARGET_DIR" \
-            -type f \
-            | sort >> "$TARGET_DIR/build-info.txt"
+          echo "===== OUTPUT ====="
+          find "$GITHUB_WORKSPACE/output" -type f | sort
 
-      # ========================================================
-      # 23. 显示固件
-      # ========================================================
+      # --------------------------------------------------------
+      # Upload Firmware
+      # --------------------------------------------------------
 
-      - name: List firmware
-        if: ${{ always() }}
-        run: |
-          echo
-          echo "========================================"
-          echo "Firmware"
-          echo "========================================"
-
-          find \
-            "$SOURCE_DIR/bin/targets" \
-            -type f \
-            \( \
-              -name "*.bin" \
-              -o -name "*.itb" \
-              -o -name "*.ubi" \
-              -o -name "*.img" \
-              -o -name "*.tar.gz" \
-            \) \
-            -exec ls -lh {} \; \
-            2>/dev/null || true
-
-      # ========================================================
-      # 24. ccache
-      # ========================================================
-
-      - name: Ccache statistics
-        if: ${{ always() }}
-        run: |
-          ccache --show-stats || true
-
-      # ========================================================
-      # 25. 磁盘
-      # ========================================================
-
-      - name: Disk usage
-        if: ${{ always() }}
-        run: |
-          df -h
-
-      # ========================================================
-      # 26. 上传固件
-      # ========================================================
-
-      - name: Upload firmware
-        if: ${{ success() }}
+      - name: Upload Firmware
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Cudy-TR3000-ImmortalWrt-${{ env.BUILD_COMMIT }}
-          path: |
-            openwrt/bin/targets/**/*
-          if-no-files-found: error
-          retention-days: 14
-
-      # ========================================================
-      # 27. 上传最终 config
-      # ========================================================
-
-      - name: Upload final config
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Cudy-TR3000-config-${{ github.run_number }}
-          path: |
-            final.config
-          if-no-files-found: ignore
-          retention-days: 14
-
-      # ========================================================
-      # 28. 上传日志
-      # ========================================================
-
-      - name: Upload build log
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Cudy-TR3000-build-log-${{ github.run_number }}
-          path: |
-            build.log
-          if-no-files-found: ignore
+          name: ImmortalWrt-${{ github.event.inputs.device }}-${{ github.run_number }}
+          path: output/
+          if-no-files-found: warn
           retention-days: 14
