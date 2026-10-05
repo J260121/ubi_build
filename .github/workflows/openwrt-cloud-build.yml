@@ -511,8 +511,7 @@ jobs:
           bash -n diy-part2.sh
           bash -n diy-part3.sh
           bash -n diy-qlb.sh
-          bash -n diy-ikuai-q6000-nand.sh
-					
+          bash -n diy-ikuai-q6000-nand.sh			
       # ========================================================
       # Load Feeds
       # ========================================================
@@ -823,10 +822,9 @@ jobs:
               QLB-4Pro)
                 CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
                 ;;
-				
-			  ikuai-q6000-nand)
-				CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
-				;;
+              ikuai-q6000-nand)
+                CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
+                ;;
               *)
                 echo "Unknown device: $DEV"
                 exit 1
