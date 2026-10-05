@@ -37,11 +37,11 @@ on:
         type: string
         default: ""
 
-      ssh:
-        description: "开启 SSH 配置，仅单设备有效"
-        required: false
-        type: boolean
-        default: false
+      #ssh:
+        #description: "开启 SSH 配置，仅单设备有效"
+        #required: false
+        #type: boolean
+        #default: false
 
       release:
         description: "发布到 GitHub Release"
