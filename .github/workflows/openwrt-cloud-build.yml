@@ -291,14 +291,11 @@ jobs:
         shell: bash
         run: |
           set -e
-
           cd "$OPENWRT_DIR"
-          chmod +x \
-            diy-part1.sh \
-            diy-part2.sh \
-            diy-part3.sh \
-            diy-qlb.sh \
-            diy-ikuai-q6000-nand.sh 
+          echo "$OPENWRT_DIR"
+          
+          chmod +x "$GITHUB_WORKSPACE/*.sh"
+
           case "$DEVICE_INPUT" in
 
             512M)
