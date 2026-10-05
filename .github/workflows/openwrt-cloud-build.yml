@@ -278,7 +278,8 @@ jobs:
         shell: bash
         run: |
           set -e
-
+          cd "$OPENWRT_DIR"
+          cp -f $GITHUB_WORKSPACE/*.sh ./
           chmod +x \
             diy-part1.sh \
             diy-part2.sh \
@@ -304,7 +305,6 @@ jobs:
               echo "========================================"
               echo "Apply TR3000 512M"
               echo "========================================"
-
               "$GITHUB_WORKSPACE/diy-part2.sh"
               ;;
 
@@ -354,6 +354,7 @@ jobs:
               exit 1
               ;;
           esac
+          "$GITHUB_WORKSPACE/diy-part3.sh"
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
