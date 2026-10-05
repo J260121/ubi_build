@@ -294,7 +294,7 @@ jobs:
           cd "$OPENWRT_DIR"
           echo "$OPENWRT_DIR"
           
-          chmod +x "$GITHUB_WORKSPACE/*.sh"
+          chmod +x $GITHUB_WORKSPACE/*.sh
 
           case "$DEVICE_INPUT" in
 
