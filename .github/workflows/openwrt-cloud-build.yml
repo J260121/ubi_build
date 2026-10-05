@@ -233,8 +233,8 @@ jobs:
             diy-part1.sh \
             diy-part2.sh \
             diy-part3.sh \
-			diy-ikuai-q6000-nand.sh \
-            diy-qlb.sh
+            diy-qlb.sh \
+            diy-ikuai-q6000-nand.sh 
 
           cd "$OPENWRT_DIR"
 
@@ -257,10 +257,10 @@ jobs:
             QLB-4Pro)
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
-			  
-			ikuai-q6000-nand)
+            ikuai-q6000-nand)
               "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
-              ;;  
+              ;;
+
           esac
 
           make defconfig
@@ -504,16 +504,15 @@ jobs:
             diy-part1.sh \
             diy-part2.sh \
             diy-part3.sh \
-			diy-ikuai-q6000-nand.sh \
-            diy-qlb.sh
+            diy-qlb.sh \
+            diy-ikuai-q6000-nand.sh 
 
           bash -n diy-part1.sh
           bash -n diy-part2.sh
           bash -n diy-part3.sh
           bash -n diy-qlb.sh
-		  bash -n diy-ikuai-q6000-nand.sh
-
-
+          bash -n diy-ikuai-q6000-nand.sh
+					
       # ========================================================
       # Load Feeds
       # ========================================================
@@ -593,7 +592,6 @@ jobs:
 
               "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
               ;;
-			  
             all)
               echo "========================================"
               echo "Apply all device definitions"
