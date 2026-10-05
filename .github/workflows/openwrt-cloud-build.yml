@@ -16,6 +16,7 @@ on:
           - "256M"
           - "128M"
           - "QLB-4Pro"
+		  - "ikuai-q6000-nand"
           - "all"
 
       repo:
@@ -184,7 +185,7 @@ jobs:
 
 
       # --------------------------------------------------------
-      # 选择 Config
+      # 选择 Configikuai-q6000-nand
       # --------------------------------------------------------
 
       - name: Set Config
@@ -209,6 +210,9 @@ jobs:
               echo "CONFIG_FILE=config/mt7981-QLB-4Pro.config" >> "$GITHUB_ENV"
               ;;
 
+            ikuai-q6000-nand)
+              echo "CONFIG_FILE=config/mt7986-ikuai-q6000-nand.config" >> "$GITHUB_ENV"
+              ;;			  
             *)
               echo "Unknown device: $DEVICE_INPUT"
               exit 1
@@ -229,6 +233,7 @@ jobs:
             diy-part1.sh \
             diy-part2.sh \
             diy-part3.sh \
+			diy-ikuai-q6000-nand.sh \
             diy-qlb.sh
 
           cd "$OPENWRT_DIR"
@@ -252,6 +257,10 @@ jobs:
             QLB-4Pro)
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
+			  
+			ikuai-q6000-nand)
+              "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
+              ;;  
           esac
 
           make defconfig
@@ -495,12 +504,14 @@ jobs:
             diy-part1.sh \
             diy-part2.sh \
             diy-part3.sh \
+			diy-ikuai-q6000-nand.sh \
             diy-qlb.sh
 
           bash -n diy-part1.sh
           bash -n diy-part2.sh
           bash -n diy-part3.sh
           bash -n diy-qlb.sh
+		  bash -n diy-ikuai-q6000-nand.sh
 
 
       # ========================================================
@@ -575,6 +586,14 @@ jobs:
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
 
+            ikuai-q6000-nand)
+              echo "========================================"
+              echo "Apply ikuai-q6000-nand"
+              echo "========================================"
+
+              "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
+              ;;
+			  
             all)
               echo "========================================"
               echo "Apply all device definitions"
@@ -586,7 +605,9 @@ jobs:
               # QLB-4Pro device definition
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
-
+              # ikuai-q6000-nand device definition
+              "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
+              ;;
             *)
               echo "Unknown device: $DEVICE_INPUT"
               exit 1
@@ -632,6 +653,9 @@ jobs:
               CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
               ;;
 
+            ikuai-q6000-nand)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
+              ;;				  
             all)
               CONFIG="$GITHUB_WORKSPACE/config/512m.config"
               ;;
@@ -801,7 +825,10 @@ jobs:
               QLB-4Pro)
                 CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
                 ;;
-
+				
+			  ikuai-q6000-nand)
+				CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
+				;;
               *)
                 echo "Unknown device: $DEV"
                 exit 1
