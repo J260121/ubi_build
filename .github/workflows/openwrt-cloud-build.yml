@@ -274,58 +274,52 @@ jobs:
       # DIY Scripts
       # ========================================================
 
-      - name: Prepare DIY Scripts
+      - name: Prepare Files And Scripts
         shell: bash
         run: |
           set -e
           cd "$OPENWRT_DIR"
           cp -f $GITHUB_WORKSPACE/*.sh ./
-
+          cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
 
       # ========================================================
       # Load Feeds
       # 必须在 make defconfig 前执行。
       # ========================================================
 
-      - name: Apply Device DIY
+      - name: Load Scripts
         shell: bash
         run: |
           set -e
           cd "$OPENWRT_DIR"
-
           chmod +x $GITHUB_WORKSPACE/*.sh
           ./scripts/feeds update -a
           ./scripts/feeds install -a
           case "$DEVICE_INPUT" in
-
             512M)
               echo "========================================"
               echo "Apply TR3000 512M"
               echo "========================================"
               "$GITHUB_WORKSPACE/diy-part2.sh"
               ;;
-
             256M)
               echo "========================================"
               echo "TR3000 256M"
               echo "========================================"
               "$GITHUB_WORKSPACE/diy-part1.sh"
               ;;
-
             128M)
               echo "========================================"
               echo "TR3000 128M"
               echo "========================================"
               "$GITHUB_WORKSPACE/diy-part1.sh"
               ;;
-
             QLB-4Pro)
               echo "========================================"
               echo "Apply QLB-4Pro"
               echo "========================================"
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
-
             ikuai-q6000-nand)
               echo "========================================"
               echo "Apply ikuai-q6000-nand"
@@ -336,13 +330,10 @@ jobs:
               echo "========================================"
               echo "Apply all device definitions"
               echo "========================================"
-
               # 512M device definition
               "$GITHUB_WORKSPACE/diy-part2.sh"
-
               # QLB-4Pro device definition
               "$GITHUB_WORKSPACE/diy-qlb.sh"
-              
               # ikuai-q6000-nand device definition
               "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
               ;;
@@ -352,13 +343,8 @@ jobs:
               ;;
           esac
           "$GITHUB_WORKSPACE/diy-part3.sh"
-
-
       # ========================================================
       # Config Hash
-      #
-      # 不再复制错误的 QLB DTS。
-      # 当前仓库已有正确 dts/ 文件。
       # ========================================================
 
       - name: Config Hash
@@ -368,10 +354,6 @@ jobs:
           set -e
 
           cd "$OPENWRT_DIR"
-          
-          cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
-
-          cat ./target/linux/mediatek/dts/mt7981b-QLB-4Pro.dts
           
           case "$DEVICE_INPUT" in
 
