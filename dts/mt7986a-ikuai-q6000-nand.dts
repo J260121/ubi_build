@@ -10,7 +10,6 @@
 / {
 	model = "ikuai-q6000-nand";
 	compatible = "ikuai,q6000", "mediatek,mt7986a";
-
 	aliases {
 		serial0 = &uart0;
 		label-mac-device = &gmac0;
