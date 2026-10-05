@@ -103,229 +103,8 @@ env:
 
 
 jobs:
-
-  # ============================================================
-  # Menuconfig
-  #
-  # 与原模板保持一致：
-  # 只有 SSH=true 且不是 all 才进入。
-  # ============================================================
-
-  menuconfig:
-    name: "⚙️ Menuconfig"
-
-    if: >
-      github.event_name == 'workflow_dispatch' &&
-      github.event.inputs.ssh == 'true' &&
-      github.event.inputs.device != 'all'
-
-    runs-on: ubuntu-22.04
-
-    steps:
-
-      # --------------------------------------------------------
-      # Checkout
-      # --------------------------------------------------------
-
-      - name: Checkout
-        uses: actions/checkout@v4
-
-
-      # --------------------------------------------------------
-      # 最小环境
-      # --------------------------------------------------------
-
-      - name: Init Environment
-        shell: bash
-        run: |
-          set -e
-
-          sudo apt-get update -qq
-
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            wget \
-            bzip2 \
-            python3 \
-            libncurses-dev
-
-          sudo mkdir -p /workdir
-
-          sudo chown -R "$(id -u):$(id -g)" /workdir
-
-
-      # --------------------------------------------------------
-      # Clone ImmortalWrt
-      # --------------------------------------------------------
-
-      - name: Clone Source
-        working-directory: /workdir
-        shell: bash
-        run: |
-          set -e
-
-          git clone \
-            "$REPO_URL" \
-            -b "$REPO_BRANCH" \
-            --single-branch \
-            --filter=blob:none \
-            openwrt
-
-          cd openwrt
-
-          if [ -n "$REPO_COMMIT" ]; then
-            git fetch \
-              --depth=1 \
-              origin \
-              "$REPO_COMMIT"
-
-            git checkout "$REPO_COMMIT"
-          fi
-
-
-      # --------------------------------------------------------
-      # 选择 Config
-      # --------------------------------------------------------
-
-      - name: Set Config
-        shell: bash
-        run: |
-          set -e
-
-          case "$DEVICE_INPUT" in
-            512M)
-              echo "CONFIG_FILE=config/512m.config" >> "$GITHUB_ENV"
-              ;;
-
-            256M)
-              echo "CONFIG_FILE=config/256m.config" >> "$GITHUB_ENV"
-              ;;
-
-            128M)
-              echo "CONFIG_FILE=config/128m.config" >> "$GITHUB_ENV"
-              ;;
-
-            QLB-4Pro)
-              echo "CONFIG_FILE=config/mt7981-QLB-4Pro.config" >> "$GITHUB_ENV"
-              ;;
-
-            ikuai-q6000-nand)
-              echo "CONFIG_FILE=config/mt7986-ikuai-q6000-nand.config" >> "$GITHUB_ENV"
-              ;;			  
-            *)
-              echo "Unknown device: $DEVICE_INPUT"
-              exit 1
-              ;;
-          esac
-
-
-      # --------------------------------------------------------
-      # Feeds + DIY + Config
-      # --------------------------------------------------------
-
-      - name: Load Feeds and Config
-        shell: bash
-        run: |
-          set -e
-
-          chmod +x \
-            diy-part1.sh \
-            diy-part2.sh \
-            diy-part3.sh \
-            diy-qlb.sh \
-            diy-ikuai-q6000-nand.sh 
-
-          cd "$OPENWRT_DIR"
-
-          # DIY Part 1 必须在 feeds update 前执行
-          "$GITHUB_WORKSPACE/diy-part1.sh"
-
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-
-          cp -f \
-            "$GITHUB_WORKSPACE/$CONFIG_FILE" \
-            .config
-
-          # 512M / QLB 的设备定义必须在 defconfig 前加入
-          case "$DEVICE_INPUT" in
-            512M)
-              "$GITHUB_WORKSPACE/diy-part2.sh"
-              ;;
-
-            QLB-4Pro)
-              "$GITHUB_WORKSPACE/diy-qlb.sh"
-              ;;
-            ikuai-q6000-nand)
-              "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
-              ;;
-
-          esac
-
-          make defconfig
-
-
-      # --------------------------------------------------------
-      # SSH
-      # --------------------------------------------------------
-      - name: Setup tmate session
-        uses: mxschmitt/action-tmate@v3
-        with:
-          limit-access-to-actor: true # 仅允许触发者连接，更安全
-          detached: true              # 关键：设置为 true，步骤会立即完成并输出地址，不会阻塞日志
-
-
-
-      # --------------------------------------------------------
-      # 保存 Config
-      # --------------------------------------------------------
-
-      - name: Push Config
-        shell: bash
-        run: |
-          set -e
-
-          cp -f \
-            "$OPENWRT_DIR/.config" \
-            "$GITHUB_WORKSPACE/$CONFIG_FILE"
-
-          cd "$GITHUB_WORKSPACE"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add "$CONFIG_FILE"
-
-          if git diff --cached --quiet; then
-            echo "No config changes."
-            exit 0
-          fi
-
-          git commit \
-            -m "Update config: ${CONFIG_FILE}"
-
-          git pull --rebase origin main
-
-          git push
-
-
-  # ============================================================
-  # Build
-  # ============================================================
-
   build:
     name: "🔨 Build Firmware"
-
-    needs: menuconfig
-
-    if: >
-      always() &&
-      (
-        needs.menuconfig.result == 'success' ||
-        needs.menuconfig.result == 'skipped'
-      )
-
     runs-on: ubuntu-22.04
 
     steps:
@@ -507,43 +286,8 @@ jobs:
             diy-qlb.sh \
             diy-ikuai-q6000-nand.sh 
 
-          bash -n diy-part1.sh
-          bash -n diy-part2.sh
-          bash -n diy-part3.sh
-          bash -n diy-qlb.sh
-          bash -n diy-ikuai-q6000-nand.sh			
       # ========================================================
       # Load Feeds
-      # ========================================================
-
-      - name: Load Feeds
-        shell: bash
-        run: |
-          set -e
-
-          cd "$OPENWRT_DIR"
-
-          # ----------------------------------------------------
-          # Cudy DIY Part 1
-          #
-          # 当前仓库的 diy-part1.sh 明确设计为：
-          # Before Update feeds
-          # ----------------------------------------------------
-
-          "$GITHUB_WORKSPACE/diy-part1.sh"
-
-          # ----------------------------------------------------
-          # Feeds
-          # ----------------------------------------------------
-
-          ./scripts/feeds update -a
-
-          ./scripts/feeds install -a
-
-
-      # ========================================================
-      # Apply Device DIY
-      #
       # 必须在 make defconfig 前执行。
       # ========================================================
 
@@ -568,19 +312,20 @@ jobs:
               echo "========================================"
               echo "TR3000 256M"
               echo "========================================"
+              "$GITHUB_WORKSPACE/diy-part1.sh"
               ;;
 
             128M)
               echo "========================================"
               echo "TR3000 128M"
               echo "========================================"
+              "$GITHUB_WORKSPACE/diy-part1.sh"
               ;;
 
             QLB-4Pro)
               echo "========================================"
               echo "Apply QLB-4Pro"
               echo "========================================"
-
               "$GITHUB_WORKSPACE/diy-qlb.sh"
               ;;
 
@@ -588,7 +333,6 @@ jobs:
               echo "========================================"
               echo "Apply ikuai-q6000-nand"
               echo "========================================"
-
               "$GITHUB_WORKSPACE/diy-ikuai-q6000-nand.sh"
               ;;
             all)
@@ -609,9 +353,9 @@ jobs:
               echo "Unknown device: $DEVICE_INPUT"
               exit 1
               ;;
-
           esac
-
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
 
       # ========================================================
       # Config Hash
