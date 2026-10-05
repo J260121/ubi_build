@@ -292,10 +292,10 @@ jobs:
         run: |
           set -e
           cd "$OPENWRT_DIR"
-          echo "$OPENWRT_DIR"
-          
-          chmod +x $GITHUB_WORKSPACE/*.sh
 
+          chmod +x $GITHUB_WORKSPACE/*.sh
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
           case "$DEVICE_INPUT" in
 
             512M)
@@ -352,8 +352,7 @@ jobs:
               ;;
           esac
           "$GITHUB_WORKSPACE/diy-part3.sh"
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+
 
       # ========================================================
       # Config Hash
