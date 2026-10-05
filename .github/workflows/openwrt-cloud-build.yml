@@ -371,7 +371,7 @@ jobs:
           
           cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
 
-          cat ./target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+          cat ./target/linux/mediatek/dts/mt7981b-QLB-4Pro.dts
           
           case "$DEVICE_INPUT" in
 
