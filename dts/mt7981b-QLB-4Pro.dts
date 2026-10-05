@@ -8,7 +8,7 @@
 #include "mt7981.dtsi"
 
 / {
-	model = "QLB-4pro";
+	model = "QLB-4Pro";
 	compatible = "QLB,4Pro", "mediatek,mt7981";
 
 	aliases {
