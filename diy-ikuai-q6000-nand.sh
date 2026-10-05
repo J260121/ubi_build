@@ -40,7 +40,7 @@ sed -i -e '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' \
 
 
 # 修改板载网口
-sed -i '//netis,nx31/a\	ikuai,q6000|\\' target/linux/mediatek/filogic/base-files/etc/board.d/02_network
+sed -i '/netis,nx31|\\/a\\'$'\t''ikuai,q6000|\\' target/linux/mediatek/filogic/base-files/etc/board.d/02_network
 	
 grep -q "define Device/ikuai-q6000-nand" target/linux/mediatek/image/filogic.mk || sed -i '/TARGET_DEVICES += cudy_wbr3000uax-v1-ubootmod/ a \
 define Device/ikuai-q6000-nand\
