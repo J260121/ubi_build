@@ -16,8 +16,7 @@ on:
           - "256M"
           - "128M"
           - "QLB-4Pro"
-		  - "ikuai-q6000-nand"
-          - "all"
+          - "ikuai-q6000-nand"
 
       repo:
         description: "指定源码仓库地址"
