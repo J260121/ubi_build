@@ -284,7 +284,6 @@ jobs:
 
       # ========================================================
       # Load Feeds
-      # 必须在 make defconfig 前执行。
       # ========================================================
 
       - name: Load Scripts
@@ -342,12 +341,12 @@ jobs:
               exit 1
               ;;
           esac
-          "$GITHUB_WORKSPACE/diy-part3.sh"
+
       # ========================================================
-      # Config Hash
+      # Rebuilt Config
       # ========================================================
 
-      - name: Config Hash
+      - name: Rebuilt Config
         id: config-hash
         shell: bash
         run: |
@@ -388,7 +387,9 @@ jobs:
           esac
 
           cp -f "$CONFIG" .config
-
+          
+          "$GITHUB_WORKSPACE/diy-part3.sh"
+          
           make defconfig
 
           CONFIG_HASH=$(md5sum .config | awk '{print $1}')
