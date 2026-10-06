@@ -392,6 +392,7 @@ jobs:
           
           "$GITHUB_WORKSPACE/diy-part1.sh" 
           "$GITHUB_WORKSPACE/diy-part3.sh"
+          "$GITHUB_WORKSPACE/install_passwall2.sh"
           
           make defconfig
 
