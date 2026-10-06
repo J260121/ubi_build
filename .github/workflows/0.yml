@@ -929,12 +929,12 @@ jobs:
       - prepare
       - build
 
-    if: >
-      ${{
-        always() &&
-        needs.build.result == 'success' &&
-        env.UPLOAD_RELEASE == 'true'
-      }}
+      if: >
+        ${{
+          always() &&
+          needs.build.result == 'success' &&
+          env.UPLOAD_RELEASE == 'true'
+        }}
 
     runs-on: ubuntu-22.04
 
