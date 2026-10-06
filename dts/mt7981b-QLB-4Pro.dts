@@ -161,7 +161,7 @@
 
 			ubi: partition@580000 {
 				label = "ubi";
-				reg = <0x0580000 0x6EC0000>;
+				reg = <0x0580000 0x7200000>;
 			};
 		};
 	};
@@ -242,4 +242,12 @@
 	status = "okay";
 
 	mediatek,mtd-eeprom = <&factory 0x0>;
+};
+
+&usb_phy {
+	status = "okay";
+};
+
+&xhci {
+	status = "okay";
 };
