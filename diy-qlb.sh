@@ -49,10 +49,11 @@ define Device/QLB-4Pro\
   SUPPORTED_DEVICES += R47\
   BLOCKSIZE := 128k\
   PAGESIZE := 2048\
-  IMAGE_SIZE := 113408k\
+  IMAGE_SIZE := 116736k\
   KERNEL_IN_UBI := 1\
+  IMAGE/factory.bin := append-ubi | check-size $$$$(IMAGE_SIZE)
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\
-  DEVICE_PACKAGES := kmod-usb3 f2fsck mkf2fs\
+  DEVICE_PACKAGES := kmod-mt7981-firmware mt7981-wo-firmware kmod-usb3\
 endef\
 TARGET_DEVICES += QLB-4Pro\
 ' target/linux/mediatek/image/filogic.mk
