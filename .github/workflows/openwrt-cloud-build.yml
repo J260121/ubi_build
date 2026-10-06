@@ -516,7 +516,7 @@ jobs:
           set -e
 
           if [ "$DEVICE_INPUT" = "all" ]; then
-            DEVICES="512M 256M 128M QLB-4Pro"
+            DEVICES="512M 256M 128M QLB-4Pro ikuai-q6000-nand"
           else
             DEVICES="$DEVICE_INPUT"
           fi
