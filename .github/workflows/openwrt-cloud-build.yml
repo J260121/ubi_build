@@ -350,171 +350,7 @@ jobs:
         shell: bash
         run: |
           set -e
-
           cd "$OPENWRT_DIR"
-          
-          case "$DEVICE_INPUT" in
-
-            512M)
-              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
-              ;;
-
-            256M)
-              CONFIG="$GITHUB_WORKSPACE/config/256m.config"
-              ;;
-
-            128M)
-              CONFIG="$GITHUB_WORKSPACE/config/128m.config"
-              ;;
-
-            QLB-4Pro)
-              CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
-              ;;
-
-            ikuai-q6000-nand)
-              CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
-              ;;				  
-            all)
-              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
-              ;;
-
-            *)
-              echo "Unknown device"
-              exit 1
-              ;;
-
-          esac
-
-          cp -f "$CONFIG" .config
-          
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          
-          "$GITHUB_WORKSPACE/diy-part1.sh" 
-          "$GITHUB_WORKSPACE/diy-part3.sh"
-          "$GITHUB_WORKSPACE/install_passwall2.sh"
-          
-          make defconfig
-
-          CONFIG_HASH=$(md5sum .config | awk '{print $1}')
-
-          echo "hash=$CONFIG_HASH" >> "$GITHUB_OUTPUT"
-
-          echo "========================================"
-          echo "CONFIG HASH"
-          echo "========================================"
-
-          echo "$CONFIG_HASH"
-
-
-      # ========================================================
-      # Ccache Cache
-      # ========================================================
-
-      - name: Cache Ccache
-        uses: actions/cache@v4
-        with:
-          path: /workdir/.ccache
-
-          key: >-
-            ${{ runner.os }}-ccache-
-            ${{ env.REPO_BRANCH }}-
-            ${{ steps.config-hash.outputs.hash }}-
-            ${{ hashFiles('diy-*.sh', 'config/*.config', 'dts/*') }}
-
-          restore-keys: |
-            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
-            ${{ runner.os }}-ccache-
-
-
-      # ========================================================
-      # Download Cache
-      #
-      # 不绑定 config。
-      # 不同设备共享下载缓存。
-      # ========================================================
-
-      - name: Cache DL
-        uses: actions/cache@v4
-        with:
-          path: /workdir/openwrt/dl
-
-          key: >-
-            ${{ runner.os }}-openwrt-dl-
-            ${{ env.REPO_BRANCH }}-
-            ${{ hashFiles('feeds.conf.default') }}
-
-          restore-keys: |
-            ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
-            ${{ runner.os }}-openwrt-dl-
-
-
-      # ========================================================
-      # Configure Ccache
-      # ========================================================
-
-      - name: Configure Ccache
-        shell: bash
-        run: |
-          set -e
-
-          mkdir -p "$CCACHE_DIR"
-
-          ccache \
-            --set-config=max_size="$CCACHE_MAXSIZE"
-
-          ccache \
-            --set-config=cache_dir="$CCACHE_DIR"
-
-          ccache \
-            --set-config=compression=true
-
-          ccache \
-            --set-config=compression_level=6
-
-          ccache -z
-
-
-      # ========================================================
-      # Download
-      #
-      # 关键优化：
-      #
-      # 原模板：
-      #
-      # 512M -> download
-      # 256M -> download
-      # 128M -> download
-      # QLB  -> download
-      #
-      # 这里：
-      #
-      # 全部设备只 download 一次。
-      # ========================================================
-
-      - name: Download Sources
-        shell: bash
-        run: |
-          set -e
-
-          cd "$OPENWRT_DIR"
-
-          make download -j"$(nproc)"
-
-          find dl \
-            -size -1024c \
-            -exec rm -f {} \;
-
-
-      # ========================================================
-      # Compile Loop
-      # ========================================================
-
-      - name: Compile Loop
-        id: compile
-        shell: bash
-        run: |
-          set -e
 
           if [ "$DEVICE_INPUT" = "all" ]; then
             DEVICES="512M 256M 128M QLB-4Pro ikuai-q6000-nand"
@@ -571,17 +407,125 @@ jobs:
             # 写入设备 Config
             # --------------------------------------------------
 
-            cp -f \
-              "$CONFIG" \
-              .config
+
+          cp -f "$CONFIG" .config
+          
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          
+          "$GITHUB_WORKSPACE/diy-part1.sh" 
+          "$GITHUB_WORKSPACE/diy-part3.sh"
+          "$GITHUB_WORKSPACE/install_passwall2.sh"
+          
+          make defconfig
+
+          CONFIG_HASH=$(md5sum .config | awk '{print $1}')
+
+          echo "hash=$CONFIG_HASH" >> "$GITHUB_OUTPUT"
+
+          echo "========================================"
+          echo "CONFIG HASH"
+          echo "========================================"
+
+          echo "$CONFIG_HASH"
 
 
-            # --------------------------------------------------
-            # 根据当前 Config 生成最终配置
-            # --------------------------------------------------
+      # ========================================================
+      # Ccache Cache
+      # ========================================================
 
-            make defconfig
+      - name: Cache Ccache
+        uses: actions/cache@v4
+        with:
+          path: /workdir/.ccache
 
+          key: >-
+            ${{ runner.os }}-ccache-
+            ${{ env.REPO_BRANCH }}-
+            ${{ steps.config-hash.outputs.hash }}-
+            ${{ hashFiles('*.sh', 'config/*.config', 'dts/*') }}
+
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-ccache-
+
+
+      # ========================================================
+      # Download Cache
+      #
+      # 不绑定 config。
+      # 不同设备共享下载缓存。
+      # ========================================================
+
+      - name: Cache DL
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt/dl
+
+          key: >-
+            ${{ runner.os }}-openwrt-dl-
+            ${{ env.REPO_BRANCH }}-
+            ${{ hashFiles('feeds.conf.default') }}
+
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-openwrt-dl-
+
+
+      # ========================================================
+      # Configure Ccache
+      # ========================================================
+
+      - name: Configure Ccache
+        shell: bash
+        run: |
+          set -e
+
+          mkdir -p "$CCACHE_DIR"
+
+          ccache \
+            --set-config=max_size="$CCACHE_MAXSIZE"
+
+          ccache \
+            --set-config=cache_dir="$CCACHE_DIR"
+
+          ccache \
+            --set-config=compression=true
+
+          ccache \
+            --set-config=compression_level=6
+
+          ccache -z
+
+
+      # ========================================================
+      # Download
+      # 全部设备只 download 一次。
+      # ========================================================
+
+      - name: Download Sources
+        shell: bash
+        run: |
+          set -e
+
+          cd "$OPENWRT_DIR"
+
+          make download -j"$(nproc)"
+
+          find dl \
+            -size -1024c \
+            -exec rm -f {} \;
+
+
+      # ========================================================
+      # Compile Loop
+      # ========================================================
+
+      - name: Compile Loop
+        id: compile
+        shell: bash
+        run: |
+          set -e
 
             # --------------------------------------------------
             # 显示 Target
