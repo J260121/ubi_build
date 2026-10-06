@@ -283,7 +283,7 @@ jobs:
           cp -f $GITHUB_WORKSPACE/dts/* ./target/linux/mediatek/dts/
 
       # ========================================================
-      # Load Feeds
+      # Load Scripts
       # ========================================================
 
       - name: Load Scripts
@@ -292,8 +292,7 @@ jobs:
           set -e
           cd "$OPENWRT_DIR"
           chmod +x $GITHUB_WORKSPACE/*.sh
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+
           case "$DEVICE_INPUT" in
             512M)
               echo "========================================"
@@ -305,13 +304,13 @@ jobs:
               echo "========================================"
               echo "TR3000 256M"
               echo "========================================"
-              "$GITHUB_WORKSPACE/diy-part1.sh"
+              "$GITHUB_WORKSPACE/diy-part2.sh"
               ;;
             128M)
               echo "========================================"
               echo "TR3000 128M"
               echo "========================================"
-              "$GITHUB_WORKSPACE/diy-part1.sh"
+              "$GITHUB_WORKSPACE/diy-part2.sh"
               ;;
             QLB-4Pro)
               echo "========================================"
@@ -346,7 +345,7 @@ jobs:
       # Rebuilt Config
       # ========================================================
 
-      - name: Rebuilt Config
+      - name: Feed And Rebuilt Config
         id: config-hash
         shell: bash
         run: |
@@ -388,6 +387,10 @@ jobs:
 
           cp -f "$CONFIG" .config
           
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          
+          "$GITHUB_WORKSPACE/diy-part1.sh" 
           "$GITHUB_WORKSPACE/diy-part3.sh"
           
           make defconfig
