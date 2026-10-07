@@ -694,10 +694,9 @@ jobs:
     name: "📦 Release Firmware"
     needs: build
     if: >
-      ${{
-        needs.build.result == 'success' &&
-        env.UPLOAD_RELEASE == 'true'
-      }}
+      needs.build.result == 'success' &&
+      env.UPLOAD_RELEASE == 'true'
+    
     runs-on: ubuntu-22.04
     permissions:
       contents: write
