@@ -1,4 +1,4 @@
-name: ImmortalWrt Builder DIY new
+name: ImmortalWrt Builder DIY
 
 on:
   repository_dispatch:
