@@ -1,7 +1,7 @@
 #!/bin/bash
 #
 # https://github.com/P3TERX/Actions-OpenWrt
-# File name: diy-part2.sh
+# File name: cudy-tr3000 512
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
@@ -59,6 +59,3 @@ define Device/cudy_tr3000-512mb-v1\
 endef\
 TARGET_DEVICES += cudy_tr3000-512mb-v1\
 ' target/linux/mediatek/image/filogic.mk
-
-# 网络配置支持匹配新设备名
-#sed -i '/cudy,tr3000-v1|\\/a cudy,tr3000-512mb-v1|\\' target/linux/mediatek/filogic/base-files/etc/board.d/02_network
