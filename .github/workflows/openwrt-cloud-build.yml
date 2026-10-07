@@ -13,9 +13,7 @@ on:
         type: choice
         default: "all"
         options:
-          - "512M"
-          - "256M"
-          - "128M"
+          - "cudy-tr3000-512MB"
           - "QLB-4Pro"
           - "ikuai-q6000-nand"
           - "all"
@@ -102,8 +100,8 @@ jobs:
 
           case "$DEVICE_INPUT" in
 
-            512M)
-              MATRIX='["512M"]'
+            cudy-tr3000-512MB)
+              MATRIX='["cudy-tr3000-512MB"]'
               ;;
 
             256M)
@@ -123,7 +121,7 @@ jobs:
               ;;
 
             all)
-              MATRIX='["512M","256M","128M","QLB-4Pro","ikuai-q6000-nand"]'
+              MATRIX='["cudy-tr3000-512MB","256M","128M","QLB-4Pro","ikuai-q6000-nand"]'
               ;;
 
             *)
@@ -383,7 +381,7 @@ jobs:
           echo "Copy custom scripts"
           echo "========================================"
 
-          cp -f "$GITHUB_WORKSPACE"/*.sh ./
+          # cp -f "$GITHUB_WORKSPACE"/*.sh ./
 
           if [ -d "$GITHUB_WORKSPACE/dts" ]; then
             cp -f \
@@ -391,7 +389,7 @@ jobs:
               ./target/linux/mediatek/dts/
           fi
 
-          chmod +x ./*.sh
+          chmod +x "$GITHUB_WORKSPACE"/devices/*.sh
 
           echo
           echo "Custom files:"
@@ -443,27 +441,27 @@ jobs:
 
             512M)
               echo "Apply TR3000 512M"
-              ./diy-part2.sh
+              "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
             256M)
               echo "Apply TR3000 256M"
-              ./diy-part1.sh
+              "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
             128M)
               echo "Apply TR3000 128M"
-              ./diy-part1.sh
+              "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
             QLB-4Pro)
               echo "Apply QLB-4Pro"
-              ./diy-qlb.sh
+              "$GITHUB_WORKSPACE"/devices/diy-qlb-4pro.sh
               ;;
 
             ikuai-q6000-nand)
               echo "Apply ikuai-q6000-nand"
-              ./diy-ikuai-q6000-nand.sh
+              "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-nand.sh
               ;;
 
             *)
@@ -488,8 +486,9 @@ jobs:
           echo "========================================"
           echo "Apply common DIY"
           echo "========================================"
-
-          ./diy-part3.sh
+          chmod +x "$GITHUB_WORKSPACE"/scripts/*.sh
+          "$GITHUB_WORKSPACE"/scripts/diy-part1.sh
+          "$GITHUB_WORKSPACE"/scripts/diy-PassWall.sh
 
 
       # ======================================================
