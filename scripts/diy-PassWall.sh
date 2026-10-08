@@ -115,3 +115,5 @@ echo
 echo "========================================"
 echo " PassWall installation completed"
 echo "========================================"
+sed -i -e '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' \
+       -e '/^IMG_PREFIX:=/ s/\($(SUBTARGET)\)/\1-$(BUILD_DATE)/' include/image.mk
