@@ -414,7 +414,7 @@ jobs:
           echo "Copy custom scripts"
           echo "========================================"
 
-          cp -f "$GITHUB_WORKSPACE"/*.sh ./
+          #cp -f "$GITHUB_WORKSPACE"/*.sh ./
 
           if [ -d "$GITHUB_WORKSPACE/dts" ]; then
             cp -f \
