@@ -921,37 +921,19 @@ jobs:
 # ============================================================
 # 汇总 / Release
 # ============================================================
-
-  
-  #----------------------------------------------------------------
-  release:
+release:
     name: "📦 Release Firmware"
 
     needs:
       - prepare
       - build
 
-    if: >-
-      ${{
-        always() &&
-        needs.prepare.result == 'success' &&
-        needs.build.result == 'success' &&
-        (
-          github.event_name == 'repository_dispatch' ||
-          inputs.release == true
-        )
-      }}
-
-
-
-
-    #if: >
-      #needs.build.result == 'success' &&
-      #github.event.inputs.release != 'false' &&
-      #github.event.client_payload.release != false &&
-      #github.event.client_payload.release != 'false'
+    if: >
+      needs.build.result == 'success' &&
+      needs.prepare.outputs.upload_release == 'true'
 
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
 
     permissions:
       contents: write
@@ -998,6 +980,78 @@ jobs:
             exit 1
           fi
 
+
+      # ======================================================
+      # 整理 Release Assets
+      #
+      # Matrix 设备会产生同名公共文件，例如 Packages.gz
+      # 和 mt798*-ram-*-bl2.bin。它们不应直接全部上传。
+      # ======================================================
+
+      - name: Prepare Release Assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf release-assets
+          mkdir -p release-assets
+
+          copied=0
+
+          while IFS= read -r -d '' file; do
+            base="$(basename "$file")"
+
+            case "$base" in
+              Packages*|packages*)
+                continue
+                ;;
+              *-bl2.bin|*-BL2.bin)
+                continue
+                ;;
+            esac
+
+            dest="release-assets/$base"
+
+            if [ -e "$dest" ]; then
+              device="$(basename "$(dirname "$file")")"
+              stem="${base%.*}"
+              ext="${base##*.}"
+              dest="release-assets/${device}-${stem}.${ext}"
+
+              n=2
+              while [ -e "$dest" ]; do
+                dest="release-assets/${device}-${stem}-${n}.${ext}"
+                n=$((n + 1))
+              done
+            fi
+
+            cp -f "$file" "$dest"
+            copied=$((copied + 1))
+          done < <(
+            find release -type f \
+              \( \
+                -name "*.bin" \
+                -o -name "*.itb" \
+                -o -name "*.img" \
+                -o -name "*.tar" \
+                -o -name "*.gz" \
+                -o -name "*.zip" \
+                -o -name "*.ubi" \
+                -o -name "*.factory" \
+                -o -name "*.sysupgrade" \
+              \) \
+              -print0
+          )
+
+          if [ "$copied" -eq 0 ]; then
+            echo "ERROR: No firmware assets found"
+            exit 1
+          fi
+
+          echo "========================================"
+          echo "Release assets: $copied"
+          echo "========================================"
+          find release-assets -type f -printf '%f\n' | sort
 
       # ======================================================
       # 生成 Release 信息
@@ -1068,18 +1122,10 @@ jobs:
           tag_name: ${{ steps.release.outputs.tag }}
           name: "ImmortalWrt ${{ steps.release.outputs.tag }}"
           body_path: release.md
-          prerelease: ${{ env.PRERELEASE == 'true' }}
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
           generate_release_notes: false
           files: |
-            release/**/*.bin
-            release/**/*.itb
-            release/**/*.img
-            release/**/*.tar
-            release/**/*.gz
-            release/**/*.zip
-            release/**/*.ubi
-            release/**/*.factory
-            release/**/*.sysupgrade
+            release-assets/*
 
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -1128,13 +1174,12 @@ jobs:
 
 
     needs:
+      - prepare
       - release
 
     if: >
       needs.release.result == 'success' &&
-      github.event.inputs.release != 'false' &&
-      github.event.client_payload.release != false &&
-      github.event.client_payload.release != 'false'
+      needs.prepare.outputs.upload_release == 'true'
 
     runs-on: ubuntu-22.04
 
