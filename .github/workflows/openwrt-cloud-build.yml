@@ -487,8 +487,9 @@ jobs:
           echo "Apply common DIY"
           echo "========================================"
           chmod +x "$GITHUB_WORKSPACE"/scripts/*.sh
-          "$GITHUB_WORKSPACE"/scripts/diy-part1.sh
-          "$GITHUB_WORKSPACE"/scripts/diy-PassWall.sh
+          #"$GITHUB_WORKSPACE"/scripts/diy-part1.sh
+          #"$GITHUB_WORKSPACE"/scripts/diy-PassWall.sh
+          "$GITHUB_WORKSPACE"/scripts/diy-part2.sh
 
 
       # ======================================================
