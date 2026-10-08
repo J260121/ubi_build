@@ -921,6 +921,9 @@ jobs:
 # ============================================================
 # 汇总 / Release
 # ============================================================
+
+  
+  #----------------------------------------------------------------
   release:
     name: "📦 Release Firmware"
 
@@ -928,11 +931,25 @@ jobs:
       - prepare
       - build
 
-    if: >
-      needs.build.result == 'success' &&
-      github.event.inputs.release != 'false' &&
-      github.event.client_payload.release != false &&
-      github.event.client_payload.release != 'false'
+    if: >-
+      ${{
+        always() &&
+        needs.prepare.result == 'success' &&
+        needs.build.result == 'success' &&
+        (
+          github.event_name == 'repository_dispatch' ||
+          inputs.release == true
+        )
+      }}
+
+
+
+
+    #if: >
+      #needs.build.result == 'success' &&
+      #github.event.inputs.release != 'false' &&
+      #github.event.client_payload.release != false &&
+      #github.event.client_payload.release != 'false'
 
     runs-on: ubuntu-22.04
 
