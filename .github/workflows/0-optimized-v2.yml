@@ -520,15 +520,15 @@ jobs:
           case "$DEVICE" in
 
             cudy-tr3000-512M)
-              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-512m.config"
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-512m.config"
               ;;
 
             cudy-tr3000-256M)
-              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-256m.config"
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-256m.config"
               ;;
 
             cudy-tr3000-128M)
-              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-128m.config"
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-128m.config"
               ;;
 
             QLB-4Pro)
