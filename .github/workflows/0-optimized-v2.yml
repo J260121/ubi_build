@@ -190,7 +190,7 @@ jobs:
       - prepare
 
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 360
 
     strategy:
       fail-fast: false
