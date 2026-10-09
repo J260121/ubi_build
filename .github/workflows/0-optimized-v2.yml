@@ -505,24 +505,6 @@ jobs:
           esac
 
 
-      # ======================================================
-      # PassWall / 第三阶段 DIY
-      # ======================================================
-
-      - name: Apply Common DIY
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          cd "$OPENWRT_DIR"
-
-          echo "========================================"
-          echo "Apply common DIY"
-          echo "========================================"
-
-          chmod +x "$GITHUB_WORKSPACE"/scripts/*.sh
-          "$GITHUB_WORKSPACE"/scripts/diy-part2.sh
-
 
       # ======================================================
       # 选择对应 Config
@@ -586,6 +568,26 @@ jobs:
           md5sum "$CONFIG"
 
           cp -f "$CONFIG" .config
+      # ======================================================
+      # PassWall / 第三阶段 DIY
+      # ======================================================
+
+      - name: Apply Common DIY
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "Apply common DIY"
+          echo "========================================"
+
+          chmod +x "$GITHUB_WORKSPACE"/scripts/*.sh
+          "$GITHUB_WORKSPACE"/scripts/diy-part2.sh
+          "$GITHUB_WORKSPACE"/scripts/diy-part1.sh
+          
+
 
 
       # ======================================================
