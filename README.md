@@ -51,8 +51,7 @@ flowchart TD
 ubi_build/
 ├── .github/
 │   └── workflows/
-│       ├── 0-optimized-v2.yml
-│       └── openwrt-cloud-build.yml
+│       └── 0-optimized-v2.yml
 ├── config/
 │   ├── mt7981-QLB-4Pro.config
 │   └── 其他设备配置文件
