@@ -13,9 +13,9 @@ on:
         type: choice
         default: "all"
         options:
-          - "512M"
-          - "256M"
-          - "128M"
+          - "cudy-tr3000-512M"
+          - "cudy-tr3000-256M"
+          - "cudy-tr3000-128M"
           - "QLB-4Pro"
           - "ikuai-q6000-nand"
           - "all"
@@ -106,16 +106,16 @@ jobs:
 
           case "$DEVICE_INPUT" in
 
-            512M)
-              MATRIX='["512M"]'
+            cudy-tr3000-512M)
+              MATRIX='["cudy-tr3000-512M"]'
               ;;
 
-            256M)
-              MATRIX='["256M"]'
+            cudy-tr3000-256M)
+              MATRIX='["cudy-tr3000-256M"]'
               ;;
 
-            128M)
-              MATRIX='["128M"]'
+            cudy-tr3000-128M)
+              MATRIX='["cudy-tr3000-128M"]'
               ;;
 
             QLB-4Pro)
@@ -127,7 +127,7 @@ jobs:
               ;;
 
             all)
-              MATRIX='["512M","256M","128M","QLB-4Pro","ikuai-q6000-nand"]'
+              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand"]'
               ;;
 
             *)
@@ -472,19 +472,19 @@ jobs:
 
           case "$DEVICE" in
 
-            512M)
+            cudy-tr3000-512M)
               echo "Apply TR3000 512M"
               "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
-            256M)
+            cudy-tr3000-256M)
               echo "Apply TR3000 256M"
-              "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
+              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
-            128M)
+            cudy-tr3000-128M)
               echo "Apply TR3000 128M"
-             "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
+              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
             QLB-4Pro)
@@ -519,16 +519,16 @@ jobs:
 
           case "$DEVICE" in
 
-            512M)
-              CONFIG="$GITHUB_WORKSPACE/config/512m.config"
+            cudy-tr3000-512M)
+              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-512m.config"
               ;;
 
-            256M)
-              CONFIG="$GITHUB_WORKSPACE/config/256m.config"
+            cudy-tr3000-256M)
+              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-256m.config"
               ;;
 
-            128M)
-              CONFIG="$GITHUB_WORKSPACE/config/128m.config"
+            cudy-tr3000-128M)
+              CONFIG="$GITHUB_WORKSPACE/config/cudy-tr3000-128m.config"
               ;;
 
             QLB-4Pro)
