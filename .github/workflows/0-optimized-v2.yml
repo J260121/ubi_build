@@ -38,6 +38,12 @@ on:
         type: string
         default: ""
 
+      plugin_scripts:
+        description: "自选插件脚本，多个用英文逗号分隔；留空则不执行"
+        required: false
+        type: string
+        default: ""
+
       release:
         description: "发布到 GitHub Release"
         required: false
@@ -60,7 +66,9 @@ env:
   TZ: Asia/Shanghai
 
   DEVICE_INPUT: ${{ github.event.inputs.device || github.event.client_payload.device || 'all' }}
-
+  
+  PLUGIN_SCRIPTS: ${{ github.event.inputs.plugin_scripts || github.event.client_payload.plugin_scripts || '' }}
+  
   REPO_URL: ${{ github.event.inputs.repo || github.event.client_payload.repo || 'https://github.com/padavanonly/immortalwrt-mt798x-6.6.git' }}
 
   REPO_BRANCH: ${{ github.event.inputs.branch || github.event.client_payload.branch || 'openwrt-24.10-6.6' }}
@@ -568,28 +576,66 @@ jobs:
           md5sum "$CONFIG"
 
           cp -f "$CONFIG" .config
+
       # ======================================================
-      # PassWall / 第三阶段 DIY
+      # 自选插件脚本
+      # 执行位置：Load Device Config 之后、make defconfig 之前
       # ======================================================
 
-      - name: Apply Common DIY
+      - name: Run Selected Plugin Scripts
+        if: ${{ env.PLUGIN_SCRIPTS != '' }}
         shell: bash
+        env:
+          SELECTED_PLUGIN_SCRIPTS: ${{ env.PLUGIN_SCRIPTS }}
         run: |
           set -euo pipefail
 
           cd "$OPENWRT_DIR"
 
+          SCRIPT_DIR="$GITHUB_WORKSPACE/scripts"
+
           echo "========================================"
-          echo "Apply common DIY"
+          echo "Selected Plugin Scripts"
           echo "========================================"
 
-          chmod +x "$GITHUB_WORKSPACE"/scripts/*.sh
-          "$GITHUB_WORKSPACE"/scripts/diy-part2.sh
-          "$GITHUB_WORKSPACE"/scripts/diy-part1.sh
+          IFS=',' read -r -a SELECTED_SCRIPTS \
+            <<< "$SELECTED_PLUGIN_SCRIPTS"
+
+          for script in "${SELECTED_SCRIPTS[@]}"; do
+            # 去掉文件名两侧空格
+            script="$(echo "$script" | xargs)"
+
+            # 忽略空项目
+            [ -z "$script" ] && continue
+
+            # 只允许填写文件名，禁止路径穿越
+            if [[ "$script" != *.sh || "$script" == */* || "$script" == *..* ]]; then
+              echo "ERROR: Invalid script name: $script"
+              exit 1
+            fi
+
+            SCRIPT_PATH="$SCRIPT_DIR/$script"
+
+            if [ ! -f "$SCRIPT_PATH" ]; then
+              echo "ERROR: Script not found: $SCRIPT_PATH"
+              exit 1
+            fi
+
+            echo
+            echo "----------------------------------------"
+            echo "Running: $script"
+            echo "----------------------------------------"
+
+            chmod +x "$SCRIPT_PATH"
+            "$SCRIPT_PATH"
+
+            echo "Completed: $script"
+          done
+
+          echo
+          echo "All selected plugin scripts completed."
+
           
-
-
-
       # ======================================================
       # Defconfig
       # ======================================================
