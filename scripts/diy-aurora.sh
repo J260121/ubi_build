@@ -34,6 +34,6 @@ for cfg in \
   CONFIG_PACKAGE_luci-app-bandix \
   CONFIG_PACKAGE_luci-app-istore
 do
-  sed -i "/^${cfg}=/d; /^# ${cfg} is not set$/d" $GITHUB_WORKSPACE/.config
+  sed -i "/^${cfg}=/d; /^# ${cfg} is not set$/d" .config
   echo "${cfg}=y" >> .config
 done
