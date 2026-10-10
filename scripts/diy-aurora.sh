@@ -27,13 +27,10 @@ git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
 git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
 git clone https://github.com/timsaya/luci-app-bandix package/luci-app-bandix
 git clone https://github.com/timsaya/openwrt-bandix package/openwrt-bandix
-for cfg in \
-  CONFIG_PACKAGE_luci-app-aurora-config \
-  CONFIG_PACKAGE_luci-theme-aurora \
-  CONFIG_PACKAGE_luci-i18n-aurora-config-zh-cn \
-  CONFIG_PACKAGE_luci-app-bandix \
-  CONFIG_PACKAGE_luci-app-istore
-do
-  sed -i "/^${cfg}=/d; /^# ${cfg} is not set$/d" .config
-  echo "${cfg}=y" >> .config
-done
+cat >> .config << 'EOF'
+CONFIG_PACKAGE_luci-app-aurora-config=y
+CONFIG_PACKAGE_luci-theme-aurora=y
+CONFIG_PACKAGE_luci-i18n-aurora-config-zh-cn=y
+CONFIG_PACKAGE_luci-app-bandix=y
+CONFIG_PACKAGE_luci-app-istore=y
+EOF
