@@ -13,20 +13,15 @@
 # Uncomment a feed source
 #sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
-# 临时解决Rust问题
-sed -i 's/ci-llvm=true/ci-llvm=false/g' feeds/packages/lang/rust/Makefile
-# add date in output file name
-sed -i -e '/^IMG_PREFIX:=/i BUILD_DATE := $(shell date +%Y%m%d)' \
-       -e '/^IMG_PREFIX:=/ s/\($(SUBTARGET)\)/\1-$(BUILD_DATE)/' include/image.mk
 # Add a feed source
 #echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 
 # Copy custom local packages into OpenWrt tree so they are available during build
-#if [ -d "$GITHUB_WORKSPACE/package/luci-compat-keep" ]; then
-#  mkdir -p package
-#  cp -r "$GITHUB_WORKSPACE/package/luci-compat-keep" package/
-#fi
+if [ -d "$GITHUB_WORKSPACE/package/luci-compat-keep" ]; then
+  mkdir -p package
+  cp -r "$GITHUB_WORKSPACE/package/luci-compat-keep" package/
+fi
 echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
 git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
 git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
