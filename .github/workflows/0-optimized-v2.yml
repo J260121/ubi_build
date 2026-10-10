@@ -1176,13 +1176,8 @@ jobs:
           - **Commit:** ${REPO_COMMIT:-latest}
           - **Repository:** ${REPO_URL}
 
-          ### Devices
-
-          - TR3000 512M
-          - TR3000 256M
-          - TR3000 128M
-          - QLB-4Pro
-          - ikuai Q6000 NAND
+          ### SCRIPTS
+          - ${{ env.PLUGIN_SCRIPTS }}
 
           ### Build Architecture
 
