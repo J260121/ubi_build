@@ -1,4 +1,3 @@
-```bash
 #!/bin/bash
 # ============================================================
 # ImmortalWrt PassWall DIY Script
@@ -180,4 +179,3 @@ echo
 echo "PassWall preparation completed."
 echo "源码目录：$OPENWRT_ROOT"
 echo "=============================================="
-```
