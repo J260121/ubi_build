@@ -1,17 +1,9 @@
 #!/bin/bash
 # ============================================================
-# ImmortalWrt DIY Part 1
+# ImmortalWrt DIY Part 3
 # 项目：J260121/ubi_build
-# 功能：
-#   1. 添加 iStore 软件源
-#   2. 复制本地 luci-compat-keep 兼容包
-#   3. 添加 Aurora 主题及配置插件
-#   4. 添加 Bandix 流量监控
-#   5. 启用 Aurora 主题（如果 .config 已存在）
-#   6. 设置 Aurora 为默认 LuCI 主题
-#
-# 执行位置：ImmortalWrt 源码根目录
-# 执行时机：更新 feeds 之前
+# 功能：iStore + Aurora + Bandix + 本地兼容包
+# 支持从任意工作目录调用
 # ============================================================
 
 set -Eeuo pipefail
@@ -21,13 +13,60 @@ echo " ImmortalWrt DIY: iStore + Aurora + Bandix"
 echo "================================================"
 
 # ------------------------------------------------------------
-# 1. 检查源码目录
+# 1. 自动定位 ImmortalWrt 源码根目录
+# 优先级：
+#   1. OPENWRT_DIR
+#   2. 当前工作目录
+#   3. GITHUB_WORKSPACE/openwrt
+#   4. 脚本目录及其常见相对目录
 # ------------------------------------------------------------
 
-if [ ! -f "feeds.conf.default" ] || [ ! -d "scripts/feeds" ]; then
-    echo "ERROR: 请在 ImmortalWrt 源码根目录运行！"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+
+is_openwrt_dir() {
+    [[ -n "${1:-}" ]] &&
+    [[ -f "$1/feeds.conf.default" ]] &&
+    [[ -d "$1/scripts/feeds" ]]
+}
+
+OPENWRT_ROOT=""
+
+if is_openwrt_dir "${OPENWRT_DIR:-}"; then
+    OPENWRT_ROOT="$(cd "$OPENWRT_DIR" && pwd -P)"
+elif is_openwrt_dir "$PWD"; then
+    OPENWRT_ROOT="$(pwd -P)"
+else
+    CANDIDATES=(
+        "${GITHUB_WORKSPACE:-}/openwrt"
+        "${GITHUB_WORKSPACE:-}"
+        "$SCRIPT_DIR/../openwrt"
+        "$SCRIPT_DIR/../../openwrt"
+        "$SCRIPT_DIR/../../../openwrt"
+        "$SCRIPT_DIR/.."
+        "$SCRIPT_DIR/../.."
+        "$SCRIPT_DIR/../../.."
+    )
+
+    for DIR in "${CANDIDATES[@]}"; do
+        if is_openwrt_dir "$DIR"; then
+            OPENWRT_ROOT="$(cd "$DIR" && pwd -P)"
+            break
+        fi
+    done
+fi
+
+if [[ -z "$OPENWRT_ROOT" ]]; then
+    echo "ERROR: 无法自动定位 ImmortalWrt 源码目录。"
+    echo "请检查 OPENWRT_DIR 环境变量或源码目录结构。"
+    echo "脚本目录：$SCRIPT_DIR"
+    echo "当前目录：$PWD"
     exit 1
 fi
+
+echo ">>> ImmortalWrt source: $OPENWRT_ROOT"
+
+# 所有相对路径操作均在源码目录执行
+cd "$OPENWRT_ROOT"
 
 # ------------------------------------------------------------
 # 2. 复制本地兼容包
@@ -37,19 +76,19 @@ echo ">>> Copying luci-compat-keep..."
 
 LOCAL_PACKAGE="${GITHUB_WORKSPACE:-}/package/luci-compat-keep"
 
-if [ -d "$LOCAL_PACKAGE" ]; then
-    rm -rf package/luci-compat-keep
+if [[ -d "$LOCAL_PACKAGE" ]]; then
     mkdir -p package
+    rm -rf package/luci-compat-keep
     cp -a "$LOCAL_PACKAGE" package/
     echo "OK: luci-compat-keep copied"
-elif [ -d "package/luci-compat-keep" ]; then
+elif [[ -d "package/luci-compat-keep" ]]; then
     echo "OK: luci-compat-keep already exists"
 else
     echo "WARNING: luci-compat-keep not found; skipped"
 fi
 
 # ------------------------------------------------------------
-# 3. 添加 iStore feed，防止重复添加
+# 3. 添加 iStore feed，避免重复
 # ------------------------------------------------------------
 
 echo ">>> Adding iStore feed..."
@@ -69,14 +108,14 @@ clone_package() {
     local repo="$1"
     local dest="$2"
 
-    if [ -d "$dest/.git" ]; then
+    if [[ -d "$dest/.git" ]]; then
         echo "Already cloned: $dest"
         return 0
     fi
 
-    if [ -e "$dest" ]; then
-        echo "ERROR: $dest exists but is not a Git repository"
-        exit 1
+    if [[ -e "$dest" ]]; then
+        echo "WARNING: $dest exists; skipping clone"
+        return 0
     fi
 
     echo ">>> Cloning $repo"
@@ -105,7 +144,7 @@ clone_package \
 
 echo ">>> Enabling Aurora theme..."
 
-if [ -f ".config" ]; then
+if [[ -f ".config" ]]; then
     if grep -q '^CONFIG_PACKAGE_luci-theme-aurora=' .config; then
         sed -i \
             's/^CONFIG_PACKAGE_luci-theme-aurora=.*/CONFIG_PACKAGE_luci-theme-aurora=y/' \
@@ -113,11 +152,9 @@ if [ -f ".config" ]; then
     else
         echo 'CONFIG_PACKAGE_luci-theme-aurora=y' >> .config
     fi
-    echo "OK: Aurora theme enabled in .config"
+    echo "OK: Aurora theme enabled"
 else
-    echo "WARNING: .config not found."
-    echo "请在最终 .config 生成后添加："
-    echo "CONFIG_PACKAGE_luci-theme-aurora=y"
+    echo "WARNING: .config not found; enable Aurora after config generation"
 fi
 
 # ------------------------------------------------------------
@@ -131,9 +168,6 @@ mkdir -p package/base-files/files/etc/uci-defaults
 cat > package/base-files/files/etc/uci-defaults/99-default-aurora-theme <<'EOF'
 #!/bin/sh
 
-# 首次启动时设置 LuCI 默认主题。
-# 仅在 Aurora 主题目录存在时切换，避免主题缺失导致界面异常。
-
 THEME_PATH="/www/luci-static/aurora"
 
 if [ -d "$THEME_PATH" ]; then
@@ -143,14 +177,13 @@ if [ -d "$THEME_PATH" ]; then
         "Aurora set as default LuCI theme"
 else
     logger -t default-aurora-theme \
-        "Aurora theme directory not found; default theme unchanged"
+        "Aurora theme directory not found; default unchanged"
 fi
 
 exit 0
 EOF
 
-chmod +x \
-    package/base-files/files/etc/uci-defaults/99-default-aurora-theme
+chmod +x package/base-files/files/etc/uci-defaults/99-default-aurora-theme
 
 # ------------------------------------------------------------
 # 7. 输出检查信息
@@ -158,6 +191,7 @@ chmod +x \
 
 echo
 echo "=============== DIY CHECK ==============="
+echo "Source: $OPENWRT_ROOT"
 
 echo "--- iStore feed ---"
 grep -E '^[[:space:]]*src-git[[:space:]]+istore[[:space:]]' \
@@ -165,17 +199,18 @@ grep -E '^[[:space:]]*src-git[[:space:]]+istore[[:space:]]' \
 
 echo
 echo "--- Custom packages ---"
-for dir in \
+
+for DIR in \
     package/luci-compat-keep \
     package/luci-theme-aurora \
     package/luci-app-aurora-config \
     package/luci-app-bandix \
     package/openwrt-bandix
 do
-    if [ -d "$dir" ]; then
-        echo "[OK] $dir"
+    if [[ -d "$DIR" ]]; then
+        echo "[OK] $DIR"
     else
-        echo "[INFO] $dir not present"
+        echo "[INFO] $DIR not present"
     fi
 done
 
