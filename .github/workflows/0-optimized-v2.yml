@@ -1191,10 +1191,6 @@ jobs:
           - kernel build artifacts
           - target image artifacts
 
-          ### PassWall
-
-          PassWall is included according to the repository DIY configuration.
-
           EOF
 
           echo "========================================"
