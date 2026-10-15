@@ -605,7 +605,7 @@ jobs:
           
           cd "$OPENWRT_DIR"
           
-          chmod +x "$THEME_PATH"
+          
           
           case "$SELECTED_PLUGIN_THEME" in
 
@@ -623,7 +623,8 @@ jobs:
               ;;
 
           esac
-
+          chmod +x "$THEME_SH"
+          "$THEME_SH"
 
 
       # ======================================================
