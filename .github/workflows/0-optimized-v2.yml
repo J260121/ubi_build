@@ -608,10 +608,12 @@ jobs:
           case "$SELECTED_PLUGIN_THEME" in
 
             liquid)
+              echo 'CONFIG_PACKAGE_luci-theme-liquid=y' >> .config
               THEME_SH="$GITHUB_WORKSPACE/theme/diy-liquid.sh"
               ;;
 
             aurora)
+              echo 'CONFIG_PACKAGE_luci-theme-aurora=y' >> .config
               THEME_SH="$GITHUB_WORKSPACE/theme/diy-aurora.sh"
               ;;
 
