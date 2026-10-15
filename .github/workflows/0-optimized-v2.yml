@@ -724,6 +724,11 @@ jobs:
             | grep '=y' \
             || true
 
+          echo
+          echo "Theme:"
+          grep '^CONFIG_PACKAGE_luci-theme-.*=y$' .config \
+            | grep '=y' \
+            || true
 
       # ======================================================
       # Ccache
