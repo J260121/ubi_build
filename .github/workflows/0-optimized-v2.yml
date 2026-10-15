@@ -38,6 +38,15 @@ on:
         type: string
         default: ""
 
+      plugin_theme:
+        description: "自选主题"
+        required: true
+        type: choice
+        default: "aurora"
+        options:
+          - "liquid"
+          - "aurora"
+        
       plugin_scripts:
         description: "自选插件脚本，多个用英文逗号分隔；留空则不执行"
         required: false
@@ -66,6 +75,8 @@ env:
   TZ: Asia/Shanghai
 
   DEVICE_INPUT: ${{ github.event.inputs.device || github.event.client_payload.device || 'all' }}
+  
+  THEME_INPUT: ${{ github.event.inputs.plugin_theme || github.event.client_payload.plugin_theme || 'aurora' }}
   
   PLUGIN_SCRIPTS: ${{ github.event.inputs.plugin_scripts || github.event.client_payload.plugin_scripts || '' }}
   
@@ -576,6 +587,44 @@ jobs:
           md5sum "$CONFIG"
 
           cp -f "$CONFIG" .config
+
+
+
+      # ======================================================
+      # 选择对应 Theme
+      # ======================================================
+
+      - name: Load Theme
+        shell: bash
+        env:
+          SELECTED_PLUGIN_THEME: ${{env.THEME_INPUT}}
+        run: |
+          set -euo pipefail
+          
+          THEME_PATH="$GITHUB_WORKSPACE/theme/"
+          
+          cd "$OPENWRT_DIR"
+          
+          chmod +x "$THEME_PATH"
+          
+          case "$SELECTED_PLUGIN_THEME" in
+
+            liquid)
+              THEME_SH="$GITHUB_WORKSPACE/theme/diy-liquid.sh"
+              ;;
+
+            aurora)
+              THEME_SH="$GITHUB_WORKSPACE/theme/diy-aurora.sh"
+              ;;
+
+            *)
+              echo "ERROR: Unknown theme: $SELECTED_PLUGIN_THEME"
+              exit 1
+              ;;
+
+          esac
+
+
 
       # ======================================================
       # 自选插件脚本
