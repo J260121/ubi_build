@@ -602,10 +602,8 @@ jobs:
           set -euo pipefail
           
           THEME_PATH="$GITHUB_WORKSPACE/theme/"
-          
+          echo "$SELECTED_PLUGIN_THEME"
           cd "$OPENWRT_DIR"
-          
-          
           
           case "$SELECTED_PLUGIN_THEME" in
 
@@ -618,11 +616,11 @@ jobs:
               ;;
 
             *)
-              echo "ERROR: Unknown theme: $SELECTED_PLUGIN_THEME"
+              echo "ERROR: Unknown theme: $THEME_SH"
               exit 1
               ;;
-
           esac
+          echo 
           chmod +x "$THEME_SH"
           "$THEME_SH"
 
