@@ -1,117 +1,29 @@
 #!/bin/bash
+#
+# https://github.com/P3TERX/Actions-OpenWrt
+# File name: diy-part1.sh
+# Description: OpenWrt DIY script part 1 (Before Update feeds)
+#
+# Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
+#
+# This is free software, licensed under the MIT License.
+# See /LICENSE for more information.
+#
 
-set -e
+# Uncomment a feed source
+#sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
 
-OPENWRT_DIR="/workdir/openwrt"
+# Add a feed source
+#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
+#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 
-echo "========================================"
-echo " DIY Part 3 - Install PassWall"
-echo "========================================"
-
-# 检查 OpenWrt 目录
-if [ ! -d "$OPENWRT_DIR" ]; then
-    echo "ERROR: OpenWrt directory not found:"
-    echo "$OPENWRT_DIR"
-    exit 1
+# Copy custom local packages into OpenWrt tree so they are available during build
+if [ -d "$GITHUB_WORKSPACE/package/luci-compat-keep" ]; then
+  mkdir -p package
+  cp -r "$GITHUB_WORKSPACE/package/luci-compat-keep" package/
 fi
-
-cd "$OPENWRT_DIR"
-
-echo "OpenWrt directory: $PWD"
-
-# --------------------------------------------------
-# 1. 添加 PassWall feeds
-# --------------------------------------------------
-
-echo
-echo ">>> Adding PassWall feeds..."
-
-if ! grep -q "openwrt-passwall-packages" feeds.conf.default 2>/dev/null; then
-    cat >> feeds.conf.default <<'EOF'
-
-# PassWall
-src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main
-src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main
-EOF
-fi
-
-# --------------------------------------------------
-# 2. 更新 PassWall feeds
-# --------------------------------------------------
-
-echo
-echo ">>> Updating PassWall feeds..."
-
-./scripts/feeds update passwall_packages
-./scripts/feeds update passwall_luci
-
-# --------------------------------------------------
-# 3. 安装 PassWall
-# --------------------------------------------------
-
-echo
-echo ">>> Installing PassWall..."
-
-./scripts/feeds install -p passwall_packages -a
-./scripts/feeds install -p passwall_luci -a
-
-# --------------------------------------------------
-# 4. 检查 luci-app-passwall
-# --------------------------------------------------
-
-echo
-echo ">>> Checking luci-app-passwall..."
-
-PASSWALL_DIR="feeds/luci/applications/luci-app-passwall"
-
-if [ ! -d "$PASSWALL_DIR" ]; then
-    echo "ERROR: luci-app-passwall not found!"
-    exit 1
-fi
-
-echo "PassWall LuCI found:"
-echo "$PASSWALL_DIR"
-
-# --------------------------------------------------
-# 5. 启用 PassWall
-# --------------------------------------------------
-
-echo
-echo ">>> Enabling PassWall..."
-
-cat >> .config <<'EOF'
-
-# ========================================
-# PassWall
-# ========================================
-
-CONFIG_PACKAGE_luci-app-passwall=y
-
-# PassWall Core
-CONFIG_PACKAGE_xray-core=y
-CONFIG_PACKAGE_sing-box=y
-
-# PassWall dependencies
-CONFIG_PACKAGE_tcping=y
-CONFIG_PACKAGE_geoview=y
-CONFIG_PACKAGE_v2ray-geodata=y
-CONFIG_PACKAGE_dns2socks=y
-CONFIG_PACKAGE_ipt2socks=y
-
-EOF
-
-# --------------------------------------------------
-# 6. 检查配置
-# --------------------------------------------------
-
-echo
-echo ">>> PassWall configuration:"
-
-grep -E \
-'CONFIG_PACKAGE_(luci-app-passwall|xray-core|sing-box|tcping|geoview|v2ray-geodata|dns2socks|ipt2socks)=' \
-.config || true
-
-echo
-echo "========================================"
-echo " PassWall installation completed"
-echo "========================================"
+echo 'src-git istore https://github.com/linkease/istore;main' >> feeds.conf.default
+git clone https://github.com/xylz0928/luci-theme-liquid.git /luci-theme-liquid
+git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
+git clone https://github.com/timsaya/luci-app-bandix package/luci-app-bandix
+git clone https://github.com/timsaya/openwrt-bandix package/openwrt-bandix
