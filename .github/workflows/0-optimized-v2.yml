@@ -1231,8 +1231,8 @@ jobs:
           - **Commit:** ${REPO_COMMIT:-latest}
           - **Repository:** ${REPO_URL}
 
-          ### SCRIPTS
-          - ${{ env.PLUGIN_SCRIPTS }}
+          ### Theme
+          - ${{ env.THEME_INPUT }}
 
           ### Build Architecture
 
