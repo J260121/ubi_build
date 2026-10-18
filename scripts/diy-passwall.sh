@@ -1,7 +1,6 @@
 # ==== 1. 修复源重复问题：PassWall源置顶（仅添加一次，覆盖官方旧版geoview依赖） ====
 # 置顶插入PassWall专用源（一次即可，解决geoview版本过旧编译失败）
-sed -i '1i src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' feeds.conf.default
-
+echo 'src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' >> feeds.conf.default
 # ==== 2. 自动补全核心配置（补全缺的关键依赖，避免编译报错） ====
 cat > .config << EOF
 CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_tr3000-v1=y
