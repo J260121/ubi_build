@@ -1,9 +1,6 @@
 # ==== 1. 修复源重复问题：PassWall源置顶（仅添加一次，覆盖官方旧版geoview依赖） ====
-# 先清掉已存在的旧PassWall源，避免重复报错
-sed -i '/passwall_packages/d;/passwall_luci/d' feeds.conf.default
 # 置顶插入PassWall专用源（一次即可，解决geoview版本过旧编译失败）
 sed -i '1i src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' feeds.conf.default
-echo 'src-git passwall_luci https://github.com/xiaorouji/openwrt-passwall.git;main' >> feeds.conf.default
 
 # ==== 2. 自动补全核心配置（补全缺的关键依赖，避免编译报错） ====
 cat > .config << EOF
