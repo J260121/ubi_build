@@ -5,7 +5,7 @@
 set -Eeuo pipefail
 
 # passwall | passwall2 | both
-PASSWALL_MODE="${PASSWALL_MODE:-PassWall}"
+PASSWALL_MODE="${PASSWALL_MODE:-passwall}"
 BRANCH="${PASSWALL_BRANCH:-main}"
 PKG_BRANCH="${PASSWALL_PACKAGES_BRANCH:-main}"
 PW_URL="https://github.com/Openwrt-Passwall/openwrt-passwall.git"
