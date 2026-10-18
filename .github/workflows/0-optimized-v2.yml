@@ -704,7 +704,10 @@ jobs:
 
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          make defconfig && make -j$(nproc) V=s
+          
+          make defconfig 
+          
+          # && make -j$(nproc) V=s
           
           # make defconfig 2026-10-18 17:52:21修
 
@@ -898,7 +901,7 @@ jobs:
             echo "========================================"
 
             make \
-              -j1 \
+              -j$(nproc) \
               V=s \
               CC="ccache gcc" \
               CXX="ccache g++"
