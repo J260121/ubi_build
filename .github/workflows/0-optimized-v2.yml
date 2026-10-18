@@ -454,20 +454,20 @@ jobs:
       # Feeds 2026-10-18 17:53:35屏蔽此处
       # ======================================================
 
-      #- name: Update Feeds
-      #  shell: bash
-      #  run: |
-      #    set -euo pipefail
+      - name: Update Feeds
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      #    cd "$OPENWRT_DIR"
+          cd "$OPENWRT_DIR"
 
-      #    echo "========================================"
-      #    echo "Update OpenWrt Feeds"
-      #    echo "========================================"
+          echo "========================================"
+          echo "Update OpenWrt Feeds"
+          echo "========================================"
 
-      #    ./scripts/feeds update -a
+          ./scripts/feeds update -a
 
-      #    ./scripts/feeds install -a
+          ./scripts/feeds install -a
 
 
       # ======================================================
