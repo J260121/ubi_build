@@ -451,23 +451,23 @@ jobs:
 
 
       # ======================================================
-      # Feeds
+      # Feeds 2026-10-18 17:53:35屏蔽此处
       # ======================================================
 
-      - name: Update Feeds
-        shell: bash
-        run: |
-          set -euo pipefail
+      #- name: Update Feeds
+      #  shell: bash
+      #  run: |
+      #    set -euo pipefail
 
-          cd "$OPENWRT_DIR"
+      #    cd "$OPENWRT_DIR"
 
-          echo "========================================"
-          echo "Update OpenWrt Feeds"
-          echo "========================================"
+      #    echo "========================================"
+      #    echo "Update OpenWrt Feeds"
+      #    echo "========================================"
 
-          ./scripts/feeds update -a
+      #    ./scripts/feeds update -a
 
-          ./scripts/feeds install -a
+      #    ./scripts/feeds install -a
 
 
       # ======================================================
@@ -690,7 +690,7 @@ jobs:
       # Defconfig
       # ======================================================
 
-      - name: Generate Final Config
+      - name: Generate Final Config And Make
         id: config
         shell: bash
         run: |
@@ -702,7 +702,11 @@ jobs:
           echo "make defconfig"
           echo "========================================"
 
-          make defconfig
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+          make defconfig && make -j$(nproc) V=s
+          
+          # make defconfig 2026-10-18 17:52:21修
 
           CONFIG_HASH="$(md5sum .config | awk '{print $1}')"
 
