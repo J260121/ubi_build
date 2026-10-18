@@ -1,12 +1,27 @@
-# 追加PassWall依赖包源和LuCI界面源
-echo 'src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' >> feeds.conf.default
+# ==== 1. 修复源重复问题：PassWall源置顶（仅添加一次，覆盖官方旧版geoview依赖） ====
+# 先清掉已存在的旧PassWall源，避免重复报错
+sed -i '/passwall_packages/d;/passwall_luci/d' feeds.conf.default
+# 置顶插入PassWall专用源（一次即可，解决geoview版本过旧编译失败）
+sed -i '1i src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' feeds.conf.default
 echo 'src-git passwall_luci https://github.com/xiaorouji/openwrt-passwall.git;main' >> feeds.conf.default
 
-# 自动选中PassWall核心组件
-echo "CONFIG_PACKAGE_luci-app-passwall=y" >> .config
-echo "CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y" >> .config
-echo "CONFIG_PACKAGE_passwall-core=y" >> .config
-# 自动包含常用依赖组件
-echo "CONFIG_PACKAGE_xray-core=y" >> .config
-echo "CONFIG_PACKAGE_v2ray-core=y" >> .config
-echo "CONFIG_PACKAGE_shadowsocks-libev-ss-local=y" >> .config
+# ==== 2. 自动补全核心配置（补全缺的关键依赖，避免编译报错） ====
+cat > .config << EOF
+CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_tr3000-v1=y
+# PassWall核心
+CONFIG_PACKAGE_luci-app-passwall=y
+CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
+CONFIG_PACKAGE_passwall-core=y
+# 修复你之前遇到的geoview编译失败+常用代理组件
+CONFIG_PACKAGE_geoview=y
+CONFIG_PACKAGE_sing-box=y
+CONFIG_PACKAGE_xray-core=y
+CONFIG_PACKAGE_v2ray-core=y
+CONFIG_PACKAGE_chinadns-ng=y
+CONFIG_PACKAGE_hysteria2=y
+EOF
+
+# ==== 3. 执行完上面内容后，只需要跑3条命令即可完成编译 ====
+./scripts/feeds update -a
+./scripts/feeds install -a
+make defconfig && make -j$(nproc) V=s
