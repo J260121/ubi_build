@@ -20,8 +20,3 @@ CONFIG_PACKAGE_v2ray-core=y
 CONFIG_PACKAGE_chinadns-ng=y
 CONFIG_PACKAGE_hysteria2=y
 EOF
-
-# ==== 3. 执行完上面内容后，只需要跑3条命令即可完成编译 ====
-./scripts/feeds update -a
-./scripts/feeds install -a
-make defconfig && make -j$(nproc) V=s
