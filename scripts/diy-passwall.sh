@@ -3,7 +3,6 @@
 echo 'src-git passwall_packages https://github.com/openwrt-passwall/openwrt-passwall-packages.git;main' >> feeds.conf.default
 # ==== 2. 自动补全核心配置（补全缺的关键依赖，避免编译报错） ====
 cat > .config << EOF
-CONFIG_TARGET_mediatek_filogic_DEVICE_cudy_tr3000-v1=y
 # PassWall核心
 CONFIG_PACKAGE_luci-app-passwall=y
 CONFIG_PACKAGE_luci-i18n-passwall-zh-cn=y
