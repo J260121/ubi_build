@@ -1,4 +1,4 @@
-name: ImmortalWrt Builder DIY  fixed
+name: immortalWrt Builder DIY passwall fixed
 
 on:
   repository_dispatch:
