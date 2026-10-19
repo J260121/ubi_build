@@ -1,0 +1,1394 @@
+name: ImmortalWrt Builder DIY  fixed
+
+on:
+  repository_dispatch:
+    types:
+      - "Source Code Update"
+
+  workflow_dispatch:
+    inputs:
+      device:
+        description: "编译设备型号"
+        required: true
+        type: choice
+        default: "all"
+        options:
+          - "cudy-tr3000-512M"
+          - "cudy-tr3000-256M"
+          - "cudy-tr3000-128M"
+          - "QLB-4Pro"
+          - "ikuai-q6000-nand"
+          - "all"
+
+      repo:
+        description: "指定源码仓库地址"
+        required: true
+        type: string
+        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git"
+
+      branch:
+        description: "指定源码 Branch"
+        required: false
+        type: string
+        default: "openwrt-24.10-6.6"
+
+      commit:
+        description: "指定源码 Commit，留空使用 Branch 最新代码"
+        required: false
+        type: string
+        default: ""
+
+      plugin_theme:
+        description: "自选主题"
+        required: true
+        type: choice
+        default: "aurora"
+        options:
+          - "liquid"
+          - "aurora"
+        
+      plugin_scripts:
+        description: "自选插件脚本，多个用英文逗号分隔；留空则不执行"
+        required: false
+        type: string
+        default: ""
+
+      release:
+        description: "发布到 GitHub Release"
+        required: false
+        type: boolean
+        default: true
+
+      prerelease:
+        description: "预发布版本"
+        required: false
+        type: boolean
+        default: false
+
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+
+env:
+  TZ: Asia/Shanghai
+
+  DEVICE_INPUT: ${{ github.event.inputs.device || github.event.client_payload.device || 'all' }}
+  
+  THEME_INPUT: ${{ github.event.inputs.plugin_theme || github.event.client_payload.plugin_theme || 'aurora' }}
+  
+  PLUGIN_SCRIPTS: ${{ github.event.inputs.plugin_scripts || github.event.client_payload.plugin_scripts || '' }}
+  
+  REPO_URL: ${{ github.event.inputs.repo || github.event.client_payload.repo || 'https://github.com/padavanonly/immortalwrt-mt798x-6.6.git' }}
+
+  REPO_BRANCH: ${{ github.event.inputs.branch || github.event.client_payload.branch || 'openwrt-24.10-6.6' }}
+
+  REPO_COMMIT: ${{ github.event.inputs.commit || github.event.client_payload.commit || '' }}
+
+  UPLOAD_RELEASE: ${{ github.event.inputs.release || github.event.client_payload.release || 'true' }}
+
+  PRERELEASE: ${{ github.event.inputs.prerelease || github.event.client_payload.prerelease || 'false' }}
+
+  CCACHE_DIR: /workdir/.ccache
+  CCACHE_MAXSIZE: 6G
+
+  OPENWRT_DIR: /workdir/openwrt
+
+
+# ============================================================
+# 生成 Matrix
+# ============================================================
+
+jobs:
+
+  prepare:
+    name: "📋 Prepare Build Matrix"
+    permissions:
+      contents: read
+    runs-on: ubuntu-22.04
+
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      upload_release: ${{ steps.matrix.outputs.upload_release }}
+      prerelease: ${{ steps.matrix.outputs.prerelease }}
+
+    steps:
+
+      - name: Generate Matrix
+        id: matrix
+        shell: bash
+        env:
+          DEVICE_INPUT: ${{ env.DEVICE_INPUT }}
+        run: |
+          set -euo pipefail
+
+          case "$DEVICE_INPUT" in
+
+            cudy-tr3000-512M)
+              MATRIX='["cudy-tr3000-512M"]'
+              ;;
+
+            cudy-tr3000-256M)
+              MATRIX='["cudy-tr3000-256M"]'
+              ;;
+
+            cudy-tr3000-128M)
+              MATRIX='["cudy-tr3000-128M"]'
+              ;;
+
+            QLB-4Pro)
+              MATRIX='["QLB-4Pro"]'
+              ;;
+
+            ikuai-q6000-nand)
+              MATRIX='["ikuai-q6000-nand"]'
+              ;;
+
+            all)
+              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand"]'
+              ;;
+
+            *)
+              echo "ERROR: Unknown device: $DEVICE_INPUT"
+              exit 1
+              ;;
+
+          esac
+
+          RELEASE_INPUT="${{ github.event.inputs.release }}"
+          RELEASE_PAYLOAD="${{ github.event.client_payload.release }}"
+          PRERELEASE_INPUT="${{ github.event.inputs.prerelease }}"
+          PRERELEASE_PAYLOAD="${{ github.event.client_payload.prerelease }}"
+
+          if [ "$RELEASE_INPUT" = "false" ] ||              [ "$RELEASE_PAYLOAD" = "false" ] ||              [ "$RELEASE_PAYLOAD" = "False" ]; then
+            UPLOAD_RELEASE="false"
+          else
+            UPLOAD_RELEASE="true"
+          fi
+
+          if [ "$PRERELEASE_INPUT" = "true" ] ||              [ "$PRERELEASE_PAYLOAD" = "true" ] ||              [ "$PRERELEASE_PAYLOAD" = "True" ]; then
+            PRERELEASE="true"
+          else
+            PRERELEASE="false"
+          fi
+
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "upload_release=$UPLOAD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+
+          echo "Release: $UPLOAD_RELEASE"
+          echo "Prerelease: $PRERELEASE"
+
+          echo "========================================"
+          echo "BUILD MATRIX"
+          echo "========================================"
+          echo "$MATRIX"
+
+
+# ============================================================
+# Matrix 编译
+# 每个设备都是完全独立的 Job
+# ============================================================
+
+  build:
+    name: "🔨 Build ${{ matrix.device }}"
+
+    permissions:
+      contents: read
+
+    needs:
+      - prepare
+
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+
+    strategy:
+      fail-fast: false
+
+      matrix:
+        device: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    env:
+      DEVICE: ${{ matrix.device }}
+      SOURCE_DATE_EPOCH: 1
+
+    steps:
+
+      # ======================================================
+      # Checkout 当前仓库
+      # ======================================================
+
+      - name: Checkout Builder Repository
+        uses: actions/checkout@v4
+
+
+      # ======================================================
+      # 初始化编译环境
+      # ======================================================
+
+      - name: Init Build Environment
+        shell: bash
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Initializing build environment"
+          echo "========================================"
+
+          # Free disk space without deleting Ubuntu's APT source definitions.
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc
+
+          sudo apt-get update -qq
+
+          sudo apt-get install -y \
+            libncurses-dev \
+            liblzo2-dev \
+            lzop \
+            ack \
+            antlr3 \
+            asciidoc \
+            autoconf \
+            automake \
+            autopoint \
+            binutils \
+            bison \
+            build-essential \
+            bzip2 \
+            ccache \
+            clang \
+            cmake \
+            cpio \
+            curl \
+            device-tree-compiler \
+            ecj \
+            fastjar \
+            flex \
+            gawk \
+            gettext \
+            gcc-multilib \
+            g++-multilib \
+            git \
+            libgnutls28-dev \
+            gperf \
+            haveged \
+            help2man \
+            intltool \
+            lib32gcc-s1 \
+            libc6-dev-i386 \
+            libelf-dev \
+            libglib2.0-dev \
+            libgmp3-dev \
+            libltdl-dev \
+            libmpc-dev \
+            libmpfr-dev \
+            libpython3-dev \
+            libreadline-dev \
+            libssl-dev \
+            libtool \
+            libyaml-dev \
+            lld \
+            llvm \
+            lrzsz \
+            genisoimage \
+            msmtp \
+            ninja-build \
+            p7zip \
+            p7zip-full \
+            patch \
+            pkgconf \
+            python3 \
+            python3-pip \
+            python3-ply \
+            python3-docutils \
+            python3-pyelftools \
+            qemu-utils \
+            re2c \
+            rsync \
+            scons \
+            squashfs-tools \
+            subversion \
+            swig \
+            texinfo \
+            uglifyjs \
+            unzip \
+            vim \
+            wget \
+            xmlto \
+            xxd \
+            zlib1g-dev \
+            zstd
+
+          sudo apt-get clean
+
+          sudo timedatectl set-timezone "$TZ"
+
+          sudo mkdir -p /workdir
+
+          sudo chown -R \
+            "$(id -u):$(id -g)" \
+            /workdir
+
+
+      # ======================================================
+      # 显示设备
+      # ======================================================
+
+      - name: Show Build Information
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "DEVICE"
+          echo "========================================"
+          echo "$DEVICE"
+
+          echo
+          echo "Repository:"
+          echo "$REPO_URL"
+
+          echo
+          echo "Branch:"
+          echo "$REPO_BRANCH"
+
+          echo
+          echo "Commit:"
+          echo "${REPO_COMMIT:-latest}"
+
+
+      # ======================================================
+      # Clone ImmortalWrt
+      # 每个 Matrix Job 自己独立 Clone
+      # ======================================================
+
+      - name: Clone ImmortalWrt
+        working-directory: /workdir
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Clone ImmortalWrt"
+          echo "========================================"
+
+          rm -rf openwrt
+
+          git clone \
+            "$REPO_URL" \
+            -b "$REPO_BRANCH" \
+            --single-branch \
+            --filter=blob:none \
+            --no-tags \
+            openwrt
+
+          cd openwrt
+
+          if [ -n "$REPO_COMMIT" ]; then
+            echo "Checkout specified commit: $REPO_COMMIT"
+
+            git fetch \
+              --depth=1 \
+              origin \
+              "$REPO_COMMIT"
+
+            git checkout "$REPO_COMMIT"
+          fi
+
+          echo
+          echo "========================================"
+          echo "IMMORTALWRT SOURCE"
+          echo "========================================"
+
+          echo "Branch:"
+          git branch --show-current || true
+
+          echo
+          echo "Commit:"
+          git rev-parse HEAD
+
+          echo
+          echo "Short Commit:"
+          git rev-parse --short HEAD
+
+
+      # ======================================================
+      # 拷贝 DIY 文件
+      # ======================================================
+
+      - name: Prepare Custom Files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "Copy custom scripts"
+          echo "========================================"
+
+          #cp -f "$GITHUB_WORKSPACE"/*.sh ./
+
+          if [ -d "$GITHUB_WORKSPACE/dts" ]; then
+            cp -f \
+              "$GITHUB_WORKSPACE"/dts/* \
+              ./target/linux/mediatek/dts/
+          fi
+
+          if compgen -G "$GITHUB_WORKSPACE/devices/*.sh" >/dev/null; then
+            chmod +x "$GITHUB_WORKSPACE"/devices/*.sh
+          fi
+
+          echo
+          echo "Custom files:"
+          ls -lah \
+            diy-*.sh \
+            2>/dev/null || true
+
+
+      # ======================================================
+      # Feeds 2026-10-18 17:53:35屏蔽此处
+      # ======================================================
+
+      #- name: Update Feeds
+      #  shell: bash
+      #  run: |
+      #    set -euo pipefail
+
+      #    cd "$OPENWRT_DIR"
+
+      #    echo "========================================"
+      #    echo "Update OpenWrt Feeds"
+      #    echo "========================================"
+
+      #    ./scripts/feeds update -a
+
+      #    ./scripts/feeds install -a
+
+
+      # ======================================================
+      # 设备专用 DIY
+      #
+      # 注意：
+      # 这里绝对不能再把多个设备 DIY 连续执行。
+      # 每个 Matrix Job 只处理一个设备。
+      # ======================================================
+
+      - name: Apply Device DIY
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "DEVICE DIY"
+          echo "========================================"
+
+          case "$DEVICE" in
+
+            cudy-tr3000-512M)
+              echo "Apply TR3000 512M"
+              "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
+              ;;
+
+            cudy-tr3000-256M)
+              echo "Apply TR3000 256M"
+              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
+              ;;
+
+            cudy-tr3000-128M)
+              echo "Apply TR3000 128M"
+              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
+              ;;
+
+            QLB-4Pro)
+              echo "Apply QLB-4Pro"
+              "$GITHUB_WORKSPACE"/devices/diy-qlb-4pro.sh
+              ;;
+
+            ikuai-q6000-nand)
+              echo "Apply ikuai-q6000-nand"
+              "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-nand.sh
+              ;;
+
+            *)
+              echo "ERROR: Unknown device: $DEVICE"
+              exit 1
+              ;;
+
+          esac
+
+
+
+      # ======================================================
+      # 选择对应 Config
+      # ======================================================
+
+      - name: Load Device Config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          case "$DEVICE" in
+
+            cudy-tr3000-512M)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-512m.config"
+              ;;
+
+            cudy-tr3000-256M)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-256m.config"
+              ;;
+
+            cudy-tr3000-128M)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-128m.config"
+              ;;
+
+            QLB-4Pro)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-QLB-4Pro.config"
+              ;;
+
+            ikuai-q6000-nand)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
+              ;;
+
+            *)
+              echo "ERROR: Unknown device: $DEVICE"
+              exit 1
+              ;;
+
+          esac
+
+          if [ ! -f "$CONFIG" ]; then
+            echo "ERROR: Config not found:"
+            echo "$CONFIG"
+            exit 1
+          fi
+
+          echo "========================================"
+          echo "DEVICE CONFIG"
+          echo "========================================"
+
+          echo "Device:"
+          echo "$DEVICE"
+
+          echo
+          echo "Config:"
+          echo "$CONFIG"
+
+          echo
+          echo "Config MD5:"
+          md5sum "$CONFIG"
+
+          cp -f "$CONFIG" .config
+
+
+
+      # ======================================================
+      # 选择对应 Theme
+      # ======================================================
+
+      - name: Load Theme
+        shell: bash
+        env:
+          SELECTED_PLUGIN_THEME: ${{env.THEME_INPUT}}
+        run: |
+          set -euo pipefail
+          
+          THEME_PATH="$GITHUB_WORKSPACE/theme/"
+          echo "$SELECTED_PLUGIN_THEME"
+          cd "$OPENWRT_DIR"
+          
+          case "$SELECTED_PLUGIN_THEME" in
+
+            liquid)
+              echo 'CONFIG_PACKAGE_luci-theme-liquid=y' >> .config
+              THEME_SH="$GITHUB_WORKSPACE/theme/diy-liquid.sh"
+              ;;
+
+            aurora)
+              echo 'CONFIG_PACKAGE_luci-theme-aurora=y' >> .config
+              THEME_SH="$GITHUB_WORKSPACE/theme/diy-aurora.sh"
+              ;;
+
+            *)
+              echo "ERROR: Unknown theme: $SELECTED_PLUGIN_THEME"
+              exit 1
+              ;;
+          esac
+          echo 
+          chmod +x "$THEME_SH"
+          "$THEME_SH"
+
+
+      # ======================================================
+      # 自选插件脚本
+      # 执行位置：Load Device Config 之后、make defconfig 之前
+      # ======================================================
+
+      - name: Run Selected Plugin Scripts
+        if: ${{ env.PLUGIN_SCRIPTS != '' }}
+        shell: bash
+        env:
+          SELECTED_PLUGIN_SCRIPTS: ${{ env.PLUGIN_SCRIPTS }}
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          SCRIPT_DIR="$GITHUB_WORKSPACE/scripts"
+
+          echo "========================================"
+          echo "Selected Plugin Scripts"
+          echo "========================================"
+
+          IFS=',' read -r -a SELECTED_SCRIPTS \
+            <<< "$SELECTED_PLUGIN_SCRIPTS"
+
+          for script in "${SELECTED_SCRIPTS[@]}"; do
+            # 去掉文件名两侧空格
+            script="$(echo "$script" | xargs)"
+
+            # 忽略空项目
+            [ -z "$script" ] && continue
+
+            # 只允许填写文件名，禁止路径穿越
+            if [[ "$script" != *.sh || "$script" == */* || "$script" == *..* ]]; then
+              echo "ERROR: Invalid script name: $script"
+              exit 1
+            fi
+
+            SCRIPT_PATH="$SCRIPT_DIR/$script"
+
+            if [ ! -f "$SCRIPT_PATH" ]; then
+              echo "ERROR: Script not found: $SCRIPT_PATH"
+              exit 1
+            fi
+
+            echo
+            echo "----------------------------------------"
+            echo "Running: $script"
+            echo "----------------------------------------"
+
+            chmod +x "$SCRIPT_PATH"
+            "$SCRIPT_PATH"
+
+            echo "Completed: $script"
+          done
+
+          echo
+          echo "All selected plugin scripts completed."
+
+          
+      # ======================================================
+      # Defconfig
+      # ======================================================
+
+      - name: Generate Final Config And Make
+        id: config
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "make defconfig"
+          echo "========================================"
+
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+          # ======================================================
+          # 默认集成官方 PassWall（不是 PassWall2）
+          # 参考 Openwrt-Passwall 官方仓库 README 的安装方式。
+          # 替换 feeds 中可能冲突/过旧的核心包和 LuCI 包，
+          # 避免 geoview 等依赖继续使用旧版本。
+          # ======================================================
+          echo "========================================"
+          echo "Install PassWall source (default enabled)"
+          echo "========================================"
+
+          rm -rf \
+            feeds/packages/net/xray-core \
+            feeds/packages/net/v2ray-geodata \
+            feeds/packages/net/sing-box \
+            feeds/packages/net/chinadns-ng \
+            feeds/packages/net/dns2socks \
+            feeds/packages/net/hysteria \
+            feeds/packages/net/ipt2socks \
+            feeds/packages/net/microsocks \
+            feeds/packages/net/naiveproxy \
+            feeds/packages/net/shadowsocks-rust \
+            feeds/packages/net/shadowsocksr-libev \
+            feeds/packages/net/simple-obfs \
+            feeds/packages/net/tcping \
+            feeds/packages/net/v2ray-plugin \
+            feeds/packages/net/xray-plugin \
+            feeds/packages/net/geoview \
+            feeds/packages/net/shadow-tls \
+            feeds/luci/applications/luci-app-passwall
+
+          rm -rf package/passwall-packages package/passwall-luci
+          git clone --depth=1 --branch main \
+            https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git \
+            package/passwall-packages
+          git clone --depth=1 --branch main \
+            https://github.com/Openwrt-Passwall/openwrt-passwall.git \
+            package/passwall-luci
+
+          # 默认将 PassWall 编入固件。
+          if ! grep -q '^CONFIG_PACKAGE_luci-app-passwall=y$' .config; then
+            echo 'CONFIG_PACKAGE_luci-app-passwall=y' >> .config
+          fi
+
+          # Enable OpenWrt's native ccache integration where supported.
+          if ! grep -q '^CONFIG_CCACHE=y$' .config; then
+            echo 'CONFIG_CCACHE=y' >> .config
+          fi
+          make defconfig
+
+          if grep -q '^CONFIG_PACKAGE_luci-app-passwall=y$' .config; then
+            echo "PassWall is enabled in final config"
+          else
+            echo "ERROR: PassWall was not selected by make defconfig"
+            exit 1
+          fi
+
+          if grep -q '^CONFIG_CCACHE=y$' .config; then
+            echo "OpenWrt ccache enabled"
+          else
+            echo "WARNING: this source tree does not expose CONFIG_CCACHE; continuing without native ccache"
+          fi
+
+          CONFIG_HASH="$(md5sum .config | awk '{print $1}')"
+
+          echo "hash=$CONFIG_HASH" >> "$GITHUB_OUTPUT"
+
+          echo
+          echo "Final config hash:"
+          echo "$CONFIG_HASH"
+
+          echo
+          echo "Target:"
+          grep '^CONFIG_TARGET_' .config \
+            | grep '=y' \
+            || true
+
+          echo
+          echo "Subtarget:"
+          grep '^CONFIG_TARGET.*SUBTARGET' .config \
+            | grep '=y' \
+            || true
+
+          echo
+          echo "Theme:"
+          grep '^CONFIG_PACKAGE_luci-theme-.*=y$' .config \
+            | grep '=y' \
+            || true
+
+      # ======================================================
+      # Ccache
+      # ======================================================
+
+      - name: Cache Ccache
+        uses: actions/cache@v4
+        with:
+          path: /workdir/.ccache
+
+          key: >-
+            ${{ runner.os }}-ccache-
+            ${{ env.REPO_BRANCH }}-
+            ${{ matrix.device }}-
+            ${{ steps.config.outputs.hash }}-
+            ${{ hashFiles('devices/**/*.sh', 'theme/**/*.sh', 'scripts/**/*.sh', 'config/*.config', 'dts/**/*') }}
+
+          restore-keys: |
+            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-${{ matrix.device }}-
+            ${{ runner.os }}-ccache-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-ccache-
+
+
+      # ======================================================
+      # OpenWrt DL Cache
+      # ======================================================
+
+      - name: Calculate Feeds Cache Key
+        id: feeds
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          if [ -f feeds.conf.default ]; then
+            FEEDS_HASH="$(sha256sum feeds.conf.default | awk '{print $1}')"
+          else
+            FEEDS_HASH="none"
+          fi
+
+          echo "hash=$FEEDS_HASH" >> "$GITHUB_OUTPUT"
+          echo "Feeds hash: $FEEDS_HASH"
+
+      - name: Cache OpenWrt DL
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt/dl
+
+          key: >-
+            ${{ runner.os }}-openwrt-dl-
+            ${{ env.REPO_BRANCH }}-
+            ${{ steps.feeds.outputs.hash }}
+
+          restore-keys: |
+            ${{ runner.os }}-openwrt-dl-${{ env.REPO_BRANCH }}-
+            ${{ runner.os }}-openwrt-dl-
+
+
+      # ======================================================
+      # Configure Ccache
+      # ======================================================
+
+      - name: Configure Ccache
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$CCACHE_DIR"
+
+          ccache --set-config=max_size="$CCACHE_MAXSIZE"
+          ccache --set-config=cache_dir="$CCACHE_DIR"
+          ccache --set-config=compression=true
+          ccache --set-config=compression_level=6
+
+          echo "========================================"
+          echo "CCACHE"
+          echo "========================================"
+
+          ccache -p
+          ccache -s
+
+
+      # ======================================================
+      # Download Source
+      # ======================================================
+
+      - name: Download Sources
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "Download OpenWrt sources"
+          echo "========================================"
+
+          make download -j"$(nproc)"
+
+          find dl \
+            -type f \
+            -size -1024c \
+            -delete \
+            || true
+
+
+      # ======================================================
+      # 编译
+      # ======================================================
+
+      - name: Compile Firmware
+        id: compile
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "START BUILD"
+          echo "========================================"
+
+          echo "Device:"
+          echo "$DEVICE"
+
+          echo
+          echo "CPU:"
+          nproc
+
+          echo
+          echo "Memory:"
+          free -h
+
+          echo
+          echo "Disk:"
+          df -h /
+
+          echo
+          echo "========================================"
+          echo "Build"
+          echo "========================================"
+
+          BUILD_JOBS="$(nproc)"
+
+          if make -j"$BUILD_JOBS"
+          then
+
+            echo
+            echo "========================================"
+            echo "✅ BUILD SUCCESS"
+            echo "========================================"
+
+          else
+
+            echo
+            echo "========================================"
+            echo "⚠️ PARALLEL BUILD FAILED"
+            echo "Retry with V=s -j1"
+            echo "========================================"
+
+            make -j1 V=s
+
+          fi
+
+          echo "status=success" >> "$GITHUB_OUTPUT"
+
+
+      # ======================================================
+      # 显示编译结果
+      # ======================================================
+
+      - name: Show Firmware Files
+        if: steps.compile.outputs.status == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          echo "========================================"
+          echo "Firmware files"
+          echo "========================================"
+
+          find bin/targets \
+            -type f \
+            \( \
+              -name "*.bin" \
+              -o -name "*.itb" \
+              -o -name "*.img" \
+              -o -name "*.tar" \
+              -o -name "*.gz" \
+              -o -name "*.zip" \
+              -o -name "*.ubi" \
+              -o -name "*.factory" \
+              -o -name "*.sysupgrade" \
+            \) \
+            -print \
+            | sort
+
+
+      # ======================================================
+      # 整理 Firmware
+      # ======================================================
+
+      - name: Collect Firmware
+        if: steps.compile.outputs.status == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd "$OPENWRT_DIR"
+
+          OUT="$GITHUB_WORKSPACE/firmware"
+
+          rm -rf "$OUT"
+
+          mkdir -p "$OUT/$DEVICE"
+
+          find bin/targets \
+            -type f \
+            \( \
+              -name "*.bin" \
+              -o -name "*.itb" \
+              -o -name "*.img" \
+              -o -name "*.tar" \
+              -o -name "*.gz" \
+              -o -name "*.zip" \
+              -o -name "*.ubi" \
+              -o -name "*.factory" \
+              -o -name "*.sysupgrade" \
+            \) \
+            -exec cp -f {} "$OUT/$DEVICE/" \;
+
+          if ! find "$OUT/$DEVICE" -type f | grep -q .; then
+            echo "ERROR: No firmware files found"
+            exit 1
+          fi
+
+          echo
+          echo "========================================"
+          echo "Collected firmware"
+          echo "========================================"
+
+          find "$OUT/$DEVICE" \
+            -type f \
+            -printf '%f\n' \
+            | sort
+
+
+      # ======================================================
+      # 上传 Artifact
+      # ======================================================
+
+      - name: Upload Firmware Artifact
+        if: steps.compile.outputs.status == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImmortalWrt-${{ matrix.device }}
+          path: ${{ github.workspace }}/firmware/${{ matrix.device }}/
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 7
+
+
+      # ======================================================
+      # 上传编译日志 / Config
+      # ======================================================
+
+      - name: Collect Build Information
+        if: always()
+        shell: bash
+        run: |
+          set +e
+
+          INFO="$GITHUB_WORKSPACE/build-info"
+
+          mkdir -p "$INFO"
+
+          echo "DEVICE=$DEVICE" \
+            > "$INFO/device.txt"
+
+          echo "REPO_URL=$REPO_URL" \
+            >> "$INFO/device.txt"
+
+          echo "REPO_BRANCH=$REPO_BRANCH" \
+            >> "$INFO/device.txt"
+
+          echo "REPO_COMMIT=$REPO_COMMIT" \
+            >> "$INFO/device.txt"
+
+          if [ -d "$OPENWRT_DIR/.git" ]; then
+            cd "$OPENWRT_DIR"
+
+            git rev-parse HEAD \
+              > "$INFO/source-commit.txt"
+
+            git log -1 --oneline \
+              > "$INFO/source-log.txt"
+          fi
+
+          if [ -f "$OPENWRT_DIR/.config" ]; then
+            cp \
+              "$OPENWRT_DIR/.config" \
+              "$INFO/.config"
+          fi
+
+          ccache -s \
+            > "$INFO/ccache.txt" \
+            2>&1 || true
+
+
+      - name: Upload Build Information
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BuildInfo-${{ matrix.device }}
+          path: ${{ github.workspace }}/build-info/
+          if-no-files-found: warn
+          retention-days: 7
+
+
+      # ======================================================
+      # Ccache Statistics
+      # ======================================================
+
+      - name: Ccache Statistics
+        if: always()
+        shell: bash
+        run: |
+          ccache -s || true
+
+
+# ============================================================
+# 汇总 / Release
+# ============================================================
+  release:
+    name: "📦 Release Firmware"
+
+    needs:
+      - prepare
+      - build
+
+    if: >
+      needs.build.result == 'success' &&
+      needs.prepare.outputs.upload_release == 'true'
+
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    permissions:
+      contents: write
+
+    steps:
+
+      # ======================================================
+      # 下载所有 Matrix Artifact
+      # ======================================================
+
+      - name: Download Firmware Artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: ImmortalWrt-*
+          path: release
+          merge-multiple: false
+
+
+      # ======================================================
+      # 检查 Firmware
+      # ======================================================
+
+      - name: Check Firmware
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "========================================"
+          echo "Release files"
+          echo "========================================"
+
+          find release \
+            -type f \
+            -print \
+            | sort
+
+          COUNT="$(find release -type f | wc -l)"
+
+          echo
+          echo "Firmware file count: $COUNT"
+
+          if [ "$COUNT" -eq 0 ]; then
+            echo "ERROR: No firmware files found"
+            exit 1
+          fi
+
+
+      # ======================================================
+      # 整理 Release Assets
+      #
+      # Matrix 设备会产生同名公共文件，例如 Packages.gz
+      # 和 mt798*-ram-*-bl2.bin。它们不应直接全部上传。
+      # ======================================================
+
+      - name: Prepare Release Assets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf release-assets
+          mkdir -p release-assets
+
+          copied=0
+
+          while IFS= read -r -d '' file; do
+            base="$(basename "$file")"
+
+            case "$base" in
+              Packages*|packages*)
+                continue
+                ;;
+              *-bl2.bin|*-BL2.bin)
+                continue
+                ;;
+            esac
+
+            dest="release-assets/$base"
+
+            if [ -e "$dest" ]; then
+              device="$(basename "$(dirname "$file")")"
+              stem="${base%.*}"
+              ext="${base##*.}"
+              dest="release-assets/${device}-${stem}.${ext}"
+
+              n=2
+              while [ -e "$dest" ]; do
+                dest="release-assets/${device}-${stem}-${n}.${ext}"
+                n=$((n + 1))
+              done
+            fi
+
+            cp -f "$file" "$dest"
+            copied=$((copied + 1))
+          done < <(
+            find release -type f \
+              \( \
+                -name "*.bin" \
+                -o -name "*.itb" \
+                -o -name "*.img" \
+                -o -name "*.tar" \
+                -o -name "*.gz" \
+                -o -name "*.zip" \
+                -o -name "*.ubi" \
+                -o -name "*.factory" \
+                -o -name "*.sysupgrade" \
+              \) \
+              -print0
+          )
+
+          if [ "$copied" -eq 0 ]; then
+            echo "ERROR: No firmware assets found"
+            exit 1
+          fi
+
+          echo "========================================"
+          echo "Release assets: $copied"
+          echo "========================================"
+          find release-assets -type f -printf '%f\n' | sort
+
+      # ======================================================
+      # 生成 Release 信息
+      # ======================================================
+
+      - name: Generate Release Metadata
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BUILD_TIME="$(date '+%Y.%m.%d-%H%M%S')"
+
+          TAG="ImmortalWrt-${BUILD_TIME}-run${GITHUB_RUN_NUMBER}"
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+          cat > release.md <<EOF
+          ## 📦 ImmortalWrt Firmware
+
+          ### Build Information
+
+          - **Build Time:** ${BUILD_TIME}
+          - **Workflow Run:** #${GITHUB_RUN_NUMBER}
+          - **Branch:** ${REPO_BRANCH}
+          - **Commit:** ${REPO_COMMIT:-latest}
+          - **Repository:** ${REPO_URL}
+
+          ### Theme
+          - ${{ env.THEME_INPUT }}
+
+          ### Build Architecture
+
+          Each device is compiled in an independent GitHub Actions Matrix Job.
+
+          This prevents cross-device contamination of:
+
+          - \`.config\`
+          - \`build_dir\`
+          - \`staging_dir\`
+          - kernel build artifacts
+          - target image artifacts
+
+          EOF
+
+          echo "========================================"
+          echo "Release tag:"
+          echo "$TAG"
+          echo "========================================"
+
+
+      # ======================================================
+      # 创建 Release
+      # ======================================================
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: "ImmortalWrt ${{ steps.release.outputs.tag }}"
+          body_path: release.md
+          prerelease: ${{ needs.prepare.outputs.prerelease == 'true' }}
+          generate_release_notes: false
+          files: |
+            release-assets/*
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+# ============================================================
+# 清理旧 Workflow
+# ============================================================
+
+  cleanup-runs:
+    name: "🧹 Cleanup Old Workflow Runs"
+
+    permissions:
+      actions: write
+
+
+    needs:
+      - build
+      - release
+
+    if: always()
+
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      - name: Delete Old Workflow Runs
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          retain_days: 0
+          keep_minimum_runs: 9
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+# ============================================================
+# 清理旧 Release
+# ============================================================
+
+  cleanup-releases:
+    name: "🧹 Cleanup Old Releases"
+
+    permissions:
+      contents: write
+
+
+    needs:
+      - prepare
+      - release
+
+    if: >
+      needs.release.result == 'success' &&
+      needs.prepare.outputs.upload_release == 'true'
+
+    runs-on: ubuntu-22.04
+
+    steps:
+
+      - name: Delete Older Releases
+        uses: dev-drprasad/delete-older-releases@v0.3.4
+        with:
+          keep_latest: 3
+          delete_tags: true
+
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
