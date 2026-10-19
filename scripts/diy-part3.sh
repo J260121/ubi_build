@@ -1,8 +1,7 @@
+# PassWall 官方源
+sed -i '1i src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;main' feeds.conf.default
+sed -i '1i src-git passwall_packages https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git;main' feeds.conf.default
 
-#!/bin/bash
-# 添加 PassWall
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall.git package/passwall
-git clone --depth=1 https://github.com/Openwrt-Passwall/openwrt-passwall-packages.git package/passwall-packages
 
 ./scripts/feeds update -a
 ./scripts/feeds install -a
