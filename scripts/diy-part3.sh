@@ -35,42 +35,6 @@ src-git passwall_luci https://github.com/Openwrt-Passwall/openwrt-passwall.git;m
 EOF
 fi
 
-# --------------------------------------------------
-# 2. 更新 PassWall feeds
-# --------------------------------------------------
-
-echo
-echo ">>> Updating PassWall feeds..."
-
-./scripts/feeds update passwall_packages
-./scripts/feeds update passwall_luci
-
-# --------------------------------------------------
-# 3. 安装 PassWall
-# --------------------------------------------------
-
-echo
-echo ">>> Installing PassWall..."
-
-./scripts/feeds install -p passwall_packages -a
-./scripts/feeds install -p passwall_luci -a
-
-# --------------------------------------------------
-# 4. 检查 luci-app-passwall
-# --------------------------------------------------
-
-echo
-echo ">>> Checking luci-app-passwall..."
-
-PASSWALL_DIR="feeds/luci/applications/luci-app-passwall"
-
-if [ ! -d "$PASSWALL_DIR" ]; then
-    echo "ERROR: luci-app-passwall not found!"
-    exit 1
-fi
-
-echo "PassWall LuCI found:"
-echo "$PASSWALL_DIR"
 
 # --------------------------------------------------
 # 5. 启用 PassWall
