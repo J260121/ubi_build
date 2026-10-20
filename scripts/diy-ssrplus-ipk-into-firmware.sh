@@ -16,14 +16,28 @@ for cmd in curl jq tar awk sed grep tr find head sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "[SSRPlus-IPK] Missing command: $cmd" >&2; exit 1; }
 done
 
-# Prefer the architecture declared by OpenWrt; allow explicit override.
+# Prefer the architecture declared by OpenWrt; allow an explicit config source.
+# The selected .config may not exist yet when this script runs before make defconfig.
 ARCH="${SSRPLUS_PACKAGE_ARCH:-}"
-if [[ -z "$ARCH" && -f "$OPENWRT_DIR/.config" ]]; then
-  ARCH="$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES="\([^"]*\)"/\1/p' "$OPENWRT_DIR/.config" | head -n1)"
+CONFIG_SOURCE="${SSRPLUS_CONFIG_SOURCE:-$OPENWRT_DIR/.config}"
+if [[ -z "$ARCH" && -f "$CONFIG_SOURCE" ]]; then
+  ARCH="$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES="\([^"]*\)"/\1/p' "$CONFIG_SOURCE" | head -n1)"
+fi
+# Infer common target architectures from target symbols in the selected config.
+if [[ -z "$ARCH" && -f "$CONFIG_SOURCE" ]]; then
+  if grep -q '^CONFIG_TARGET_mediatek_filogic=y$' "$CONFIG_SOURCE"; then
+    ARCH="aarch64_cortex-a53"
+  elif grep -q '^CONFIG_TARGET_armsr_armv8=y$' "$CONFIG_SOURCE"; then
+    ARCH="aarch64_generic"
+  elif grep -q '^CONFIG_TARGET_x86_64=y$' "$CONFIG_SOURCE"; then
+    ARCH="x86_64"
+  fi
 fi
 if [[ -z "$ARCH" ]]; then
-  echo "[SSRPlus-IPK] ERROR: cannot determine CONFIG_TARGET_ARCH_PACKAGES." >&2
-  echo "[SSRPlus-IPK] Run after target config is prepared, or set SSRPLUS_PACKAGE_ARCH explicitly." >&2
+  echo "[SSRPlus-IPK] ERROR: cannot determine package architecture." >&2
+  echo "[SSRPlus-IPK] This commonly happens when .config has not been copied/generated yet." >&2
+  echo "[SSRPlus-IPK] Set SSRPLUS_CONFIG_SOURCE to your selected config file, or set SSRPLUS_PACKAGE_ARCH explicitly." >&2
+  echo "[SSRPlus-IPK] Example for MediaTek Filogic (MT7981/MT7986): SSRPLUS_PACKAGE_ARCH=aarch64_cortex-a53" >&2
   exit 1
 fi
 
