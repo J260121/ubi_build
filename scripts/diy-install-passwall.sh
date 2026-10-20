@@ -1,8 +1,6 @@
 # ===== 集成 PassWall LuCI 界面 =====
 set -e
 
-cd "$GITHUB_WORKSPACE/openwrt"
-
 echo "===== 集成 PassWall 软件包 ====="
 
 # 克隆官方 PassWall 软件包库
