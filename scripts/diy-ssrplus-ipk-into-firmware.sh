@@ -18,7 +18,7 @@ done
 
 # Prefer the architecture declared by OpenWrt; allow an explicit config source.
 # The selected .config may not exist yet when this script runs before make defconfig.
-ARCH="${SSRPLUS_PACKAGE_ARCH:-}"
+ARCH="aarch64_cortex-a53"
 CONFIG_SOURCE="${SSRPLUS_CONFIG_SOURCE:-$OPENWRT_DIR/.config}"
 if [[ -z "$ARCH" && -f "$CONFIG_SOURCE" ]]; then
   ARCH="$(sed -n 's/^CONFIG_TARGET_ARCH_PACKAGES="\([^"]*\)"/\1/p' "$CONFIG_SOURCE" | head -n1)"
