@@ -1240,13 +1240,19 @@ jobs:
 
           ### Theme
           - ${{ env.THEME_INPUT }}
+
+          EOF
           
-          if [ -n "$PLUGIN_SCRIPTS" ]; then
-                {
-                  echo "### Script"
-                  echo "- $PLUGIN_SCRIPTS"
-                } >> "$GITHUB_STEP_SUMMARY"
-              fi
+          if [ -n "${{ env.PLUGIN_SCRIPTS }}" ]; then
+            cat >> release.md <<EOF
+          ### Script
+          - ${{ env.PLUGIN_SCRIPTS }}
+          
+          EOF
+          fi
+          
+          cat >> release.md <<'EOF'
+
           
           ### Build Architecture
 
