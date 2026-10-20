@@ -1,6 +1,7 @@
 # ===== 集成 PassWall LuCI 界面 =====
 set -e
 
+cd "$OPENWRT_DIR"
 echo "===== 集成 PassWall 软件包 ====="
 
 # 克隆官方 PassWall 软件包库
