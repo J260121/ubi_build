@@ -1240,7 +1240,14 @@ jobs:
 
           ### Theme
           - ${{ env.THEME_INPUT }}
-
+          
+          if [ -n "$PLUGIN_SCRIPTS" ]; then
+                {
+                  echo "### Script"
+                  echo "- $PLUGIN_SCRIPTS"
+                } >> "$GITHUB_STEP_SUMMARY"
+              fi
+          
           ### Build Architecture
 
           Each device is compiled in an independent GitHub Actions Matrix Job.
