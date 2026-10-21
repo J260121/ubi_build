@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 测试OK 2026年10月20日
+# 测试OK 2026-10-21
 # Integrate the two official PassWall IPKs into an OpenWrt/ImmortalWrt source build.
 # Run from the workflow after the OpenWrt source tree has been prepared, before make defconfig.
 set -Eeuo pipefail
