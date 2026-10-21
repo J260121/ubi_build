@@ -1,93 +1,169 @@
-```bash
 #!/bin/bash
-# TurboACC binary precompile
-# J260121/ubi_build
+# ============================================================
+# TurboACC binary precompile for J260121/ubi_build
 # Target: aarch64_cortex-a53
+# Script: scripts/diy-turboacc.sh
+# ============================================================
 
 set -Eeuo pipefail
 
-log() { echo "[TurboACC-IPK] $*"; }
-die() { echo "[TurboACC-IPK] ERROR: $*" >&2; exit 1; }
+log() {
+    echo "[TurboACC-IPK] $*"
+}
+
+warn() {
+    echo "[TurboACC-IPK] WARNING: $*" >&2
+}
+
+die() {
+    echo "[TurboACC-IPK] ERROR: $*" >&2
+    exit 1
+}
+
+# ------------------------------------------------------------
+# 1. Locate OpenWrt source directory
+# ------------------------------------------------------------
 
 ROOT="${OPENWRT_DIR:-${GITHUB_WORKSPACE:-$PWD}/openwrt}"
-[ -f "$ROOT/Makefile" ] || ROOT="$PWD"
+
+if [ ! -f "$ROOT/Makefile" ]; then
+    ROOT="$PWD"
+fi
+
 [ -f "$ROOT/Makefile" ] || die "OpenWrt source directory not found"
 
 cd "$ROOT"
 
-OUT="${GITHUB_WORKSPACE:-$ROOT}/turboacc-prebuilt"
+[ -x scripts/feeds ] || die "scripts/feeds not found"
+[ -f feeds.conf.default ] || [ -f feeds.conf ] \
+    || die "feeds.conf.default and feeds.conf are missing"
+
+OUT="${TURBOACC_OUT:-${GITHUB_WORKSPACE:-$ROOT}/turboacc-prebuilt}"
 mkdir -p "$OUT"
 
-log "Source: $ROOT"
-log "Output: $OUT"
+log "OpenWrt source: $ROOT"
+log "Output directory: $OUT"
 
-# 1. Check configuration
-if [ ! -f .config ]; then
-    die ".config is missing; run the workflow's configuration step first"
+# ------------------------------------------------------------
+# 2. Initialize LuCI feed
+# ------------------------------------------------------------
+
+if [ ! -f feeds/luci/luci.mk ]; then
+    log "LuCI feed missing; updating..."
+
+    ./scripts/feeds update luci \
+        || die "Failed to update LuCI feed"
+
+    [ -f feeds/luci/luci.mk ] \
+        || die "feeds/luci/luci.mk is still missing"
 fi
 
-if ! grep -q '^CONFIG_TARGET_ARCH_PACKAGES="aarch64_cortex-a53"' .config; then
-    log "Warning: target package architecture is not confirmed as aarch64_cortex-a53"
+# Install only the required LuCI package definitions.
+# Avoid installing every package in every feed unnecessarily.
+if [ ! -e package/feeds/luci/luci-base ]; then
+    ./scripts/feeds install luci-base \
+        || warn "Could not install luci-base explicitly"
 fi
 
-# 2. Integrate official TurboACC source
-if [ ! -f package/turboacc/luci-app-turboacc/Makefile ]; then
-    log "Running official TurboACC integration script"
+# ------------------------------------------------------------
+# 3. Integrate official TurboACC source
+# ------------------------------------------------------------
+
+TURBOACC_DIR="package/turboacc"
+APP_MAKEFILE="$TURBOACC_DIR/luci-app-turboacc/Makefile"
+
+if [ ! -f "$APP_MAKEFILE" ]; then
+    log "Downloading official TurboACC integration script..."
+
     curl -fL --retry 3 \
-      https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh \
-      -o /tmp/add_turboacc.sh \
-      || die "Failed to download official integration script"
+        https://raw.githubusercontent.com/chenmozhijin/turboacc/luci/add_turboacc.sh \
+        -o /tmp/add_turboacc.sh \
+        || die "Failed to download TurboACC integration script"
 
+    # Disable SFE to avoid the additional SFE kernel patch set.
     bash /tmp/add_turboacc.sh --no-sfe \
-      || die "TurboACC integration failed"
+        || die "Official TurboACC integration failed"
 fi
 
-[ -f package/turboacc/luci-app-turboacc/Makefile ] \
-    || die "luci-app-turboacc package was not installed"
+[ -f "$APP_MAKEFILE" ] \
+    || die "TurboACC LuCI package Makefile not found"
 
-# 3. Enable the LuCI package
+# Verify the build system can see the LuCI makefile.
+[ -f feeds/luci/luci.mk ] \
+    || die "LuCI feed disappeared after integration"
+
+# ------------------------------------------------------------
+# 4. Install LuCI dependencies and package definitions
+# ------------------------------------------------------------
+
+./scripts/feeds install luci-base \
+    || die "Failed to install luci-base"
+
+# ------------------------------------------------------------
+# 5. Enable TurboACC in configuration
+# ------------------------------------------------------------
+
+[ -f .config ] || die ".config is missing; generate configuration first"
+
 if grep -q '^CONFIG_PACKAGE_luci-app-turboacc=' .config; then
     sed -i \
-      's/^CONFIG_PACKAGE_luci-app-turboacc=.*/CONFIG_PACKAGE_luci-app-turboacc=y/' \
-      .config
+        's/^CONFIG_PACKAGE_luci-app-turboacc=.*/CONFIG_PACKAGE_luci-app-turboacc=y/' \
+        .config
 else
     echo 'CONFIG_PACKAGE_luci-app-turboacc=y' >> .config
 fi
 
-# 4. Resolve configuration before compiling
-make defconfig
+# Resolve dependencies and validate configuration.
+log "Resolving package configuration..."
+make defconfig || die "make defconfig failed"
 
-# 5. Precompile TurboACC LuCI package
-log "Precompiling luci-app-turboacc"
+if ! grep -q '^CONFIG_PACKAGE_luci-app-turboacc=y$' .config; then
+    die "TurboACC was not selected by Kconfig; check package dependencies"
+fi
+
+# ------------------------------------------------------------
+# 6. Build TurboACC LuCI binary package
+# ------------------------------------------------------------
+
+log "Building luci-app-turboacc..."
+
 make package/turboacc/luci-app-turboacc/compile -j1 V=s \
     || die "luci-app-turboacc compilation failed"
 
-# 6. Collect generated IPK files
+# ------------------------------------------------------------
+# 7. Collect generated IPK files
+# ------------------------------------------------------------
+
+log "Collecting generated IPK files..."
+
 find bin/packages -type f -name '*turboacc*.ipk' \
     -exec cp -f '{}' "$OUT/" \;
 
-# Include related packages when generated by the build
+# Optional related packages, only if built by this source tree.
 find bin/packages -type f \
-    \( -name '*shortcut-fe*.ipk' -o \
-       -name '*nft-fullcone*.ipk' \) \
+    \( -name '*nft-fullcone*.ipk' -o \
+       -name '*shortcut-fe*.ipk' \) \
     -exec cp -f '{}' "$OUT/" \;
 
-# 7. Generate manifest
+# ------------------------------------------------------------
+# 8. Validate output
+# ------------------------------------------------------------
+
+if ! find "$OUT" -maxdepth 1 -type f -name '*.ipk' | grep -q .; then
+    die "No IPK files collected; inspect bin/packages and build logs"
+fi
+
+# Record build information.
 {
-    echo "Target architecture: aarch64_cortex-a53"
-    echo "Source repository: https://github.com/chenmozhijin/turboacc"
+    echo "TurboACC binary precompile"
+    echo "Target: aarch64_cortex-a53"
+    echo "Repository: https://github.com/chenmozhijin/turboacc"
     echo "Branch: luci"
     echo "Build date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
     echo
-    echo "Generated IPK files:"
+    echo "IPK files:"
     find "$OUT" -maxdepth 1 -type f -name '*.ipk' -printf '%f\n' | sort
 } > "$OUT/MANIFEST.txt"
 
-if ! find "$OUT" -maxdepth 1 -type f -name '*.ipk' | grep -q .; then
-    die "No IPK files collected; check package output and build logs"
-fi
-
-log "Precompile output:"
+log "Precompile completed."
 ls -lh "$OUT"
-log "Done"
-```
