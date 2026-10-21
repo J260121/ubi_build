@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 测试OK 2026-10-21
 # Integrate official SSR Plus+ v196.19 IPKs as local no-source-build packages.
 # Structure follows scripts/diy-passwall.sh. Run after OpenWrt source is prepared,
 # before `make defconfig`.
