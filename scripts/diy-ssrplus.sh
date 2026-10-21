@@ -72,7 +72,9 @@ unpack_outer() {
 
 # Read metadata and payload, then repack as a local no-compile package.
 wrap_ipk() {
-  local ipk="$1" key="$2" outer="$WORK_DIR/${key}-outer" payload="$WORK_DIR/${key}-payload"
+  # Under `set -u`, do not expand key in the same `local` declaration that assigns it.
+  local ipk="$1" key="$2"
+  local outer="$WORK_DIR/${key}-outer" payload="$WORK_DIR/${key}-payload"
   local control_file data_file pkg version depends pkgdir
   rm -rf "$outer" "$payload"
   mkdir -p "$outer" "$payload"
