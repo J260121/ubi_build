@@ -342,8 +342,25 @@ extract_inner_tar() {
 
 CONTROL_DIR="${WORK_DIR}/control"
 DATA_DIR="${WORK_DIR}/data"
-CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar"
-DATA_ARCHIVE="${WORK_DIR}/data-inner.tar"
+case "$CONTROL_MEMBER" in
+    *.gz)  CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar.gz" ;;
+    *.xz)  CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar.xz" ;;
+    *.zst) CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar.zst" ;;
+    *) die "不支持的 control 压缩格式：$CONTROL_MEMBER" ;;
+esac
+
+case "$DATA_MEMBER" in
+    *.gz)  DATA_ARCHIVE="${WORK_DIR}/data-inner.tar.gz" ;;
+    *.xz)  DATA_ARCHIVE="${WORK_DIR}/data-inner.tar.xz" ;;
+    *.zst) DATA_ARCHIVE="${WORK_DIR}/data-inner.tar.zst" ;;
+    *) die "不支持的 data 压缩格式：$DATA_MEMBER" ;;
+esac
+
+extract_ipk_member "$CONTROL_MEMBER" "$CONTROL_ARCHIVE"
+extract_ipk_member "$DATA_MEMBER" "$DATA_ARCHIVE"
+
+extract_inner_tar "$CONTROL_ARCHIVE" "$CONTROL_DIR"
+extract_inner_tar "$DATA_ARCHIVE" "$DATA_DIR"
 
 rm -rf "$CONTROL_DIR" "$DATA_DIR"
 mkdir -p "$CONTROL_DIR" "$DATA_DIR"
