@@ -1,9 +1,8 @@
 
 #!/usr/bin/env bash
 # ImmortalWrt 24.10 aria2 预编译集成脚本
-# 仓库：J260121/ubi_build
 # 目标架构：aarch64_cortex-a53
-# 不编译 aria2 源码，直接集成预编译 IPK
+# 直接下载官方预编译 IPK，不编译 aria2 源码
 
 set -Eeuo pipefail
 
@@ -17,7 +16,6 @@ PKG_DIR="${OPENWRT_DIR}/package/aria2-prebuilt"
 FILES_DIR="${PKG_DIR}/files"
 
 log() {
-    # 所有日志写入 stderr，防止污染命令替换结果
     printf '[Aria2-IPK] %s\n' "$*" >&2
 }
 
@@ -32,7 +30,7 @@ for cmd in curl gzip awk sed tar python3; do
 done
 
 [[ -d "$OPENWRT_DIR/package" ]] ||
-    die "找不到 OpenWrt 目录：$OPENWRT_DIR"
+    die "找不到 OpenWrt package 目录：$OPENWRT_DIR/package"
 
 mkdir -p "$WORK_DIR"
 
@@ -41,16 +39,15 @@ log "固定软件包架构：$ARCH"
 log "软件仓库：$REPO_BASE"
 
 # --------------------------------------------------
-# 1. 下载并解析软件包索引
+# 1. 查询官方软件包索引
 # --------------------------------------------------
 
 lookup_package() {
     local package="$1"
     local repo="$2"
-    local index plain result
-
-    index="${WORK_DIR}/Packages-${repo}.gz"
-    plain="${WORK_DIR}/Packages-${repo}.txt"
+    local index="${WORK_DIR}/Packages-${repo}.gz"
+    local plain="${WORK_DIR}/Packages-${repo}.txt"
+    local result
 
     log "查询软件包：${package}（feed: ${repo}）"
 
@@ -63,7 +60,6 @@ lookup_package() {
     gzip -t "$index" >/dev/null 2>&1 ||
         die "软件包索引损坏：$index"
 
-    # 完整解压到文件，避免 gzip 管道 Broken pipe
     gzip -dc "$index" > "$plain" ||
         die "索引解压失败：$index"
 
@@ -91,8 +87,8 @@ lookup_package() {
 
                 if (name == wanted &&
                     filename != "" &&
-                    arch != "" &&
-                    version != "") {
+                    version != "" &&
+                    (arch == "all" || arch == "aarch64_cortex-a53")) {
                     printf "%s|%s|%s\n", filename, arch, version
                     exit
                 }
@@ -121,28 +117,18 @@ for repo in packages base routing; do
 done
 
 [[ -n "$FOUND" ]] ||
-    die "未找到 aria2 预编译 IPK，请检查软件仓库"
+    die "未找到 aria2 预编译 IPK"
 
 IFS='|' read -r IPK_PATH IPK_ARCH IPK_VERSION <<< "$FOUND"
 
 [[ -n "${IPK_PATH:-}" ]] ||
     die "索引解析失败：Filename 为空"
 
-[[ -n "${IPK_ARCH:-}" ]] ||
-    die "索引解析失败：Architecture 为空"
+[[ "$IPK_PATH" != /* && "$IPK_PATH" != *".."* ]] ||
+    die "软件包索引包含不安全路径：$IPK_PATH"
 
-[[ -n "${IPK_VERSION:-}" ]] ||
-    die "索引解析失败：Version 为空"
-
-if [[ "$IPK_ARCH" != "$ARCH" && "$IPK_ARCH" != "all" ]]; then
-    die "架构不匹配：仓库=${IPK_ARCH}，目标=${ARCH}"
-fi
-
-case "$IPK_PATH" in
-    /*|../*|*/../*)
-        die "软件包索引包含不安全路径：$IPK_PATH"
-        ;;
-esac
+[[ "$IPK_ARCH" == "$ARCH" || "$IPK_ARCH" == "all" ]] ||
+    die "架构不匹配：$IPK_ARCH"
 
 IPK_FILE="${WORK_DIR}/aria2.ipk"
 IPK_URL="${REPO_BASE}/${FOUND_REPO}/${IPK_PATH}"
@@ -161,16 +147,16 @@ curl -fL --retry 3 --connect-timeout 20 \
 
 # --------------------------------------------------
 # 2. 识别 IPK 外层容器
-#    优先使用 Python 读取 ar 归档，避免依赖 ar 命令
+#    支持 tar 和 ar 两种格式
 # --------------------------------------------------
 
 MEMBERS_FILE="${WORK_DIR}/ipk-members.txt"
 IPK_FORMAT=""
 
-if python3 - "$IPK_FILE" "$MEMBERS_FILE" list <<'PY'
+if python3 - "$IPK_FILE" "$MEMBERS_FILE" <<'PY'
 import sys
 
-src, out, mode = sys.argv[1:4]
+src, out = sys.argv[1:3]
 data = open(src, "rb").read()
 
 if not data.startswith(b"!<arch>\n"):
@@ -213,9 +199,9 @@ while pos < len(data):
     elif raw_name.startswith("/") and raw_name[1:].isdigit():
         offset = int(raw_name[1:])
         if offset < len(string_table):
-            name = string_table[offset:].split(b"/\n", 1)[0].decode(
-                "utf-8", "replace"
-            )
+            name = string_table[offset:].split(
+                b"/\n", 1
+            )[0].decode("utf-8", "replace")
     elif raw_name in ("/", "/SYM64/"):
         name = raw_name
 
@@ -232,9 +218,7 @@ then
 elif tar -tf "$IPK_FILE" > "$MEMBERS_FILE" 2>/dev/null; then
     IPK_FORMAT="tar"
 else
-    log "无法识别下载文件格式，前 32 字节如下："
-    od -An -tx1 -N32 "$IPK_FILE" >&2 || true
-    die "下载文件不是有效的 ar 或 tar 容器"
+    die "无法识别下载文件的 IPK 容器格式"
 fi
 
 log "检测到 IPK 容器格式：$IPK_FORMAT"
@@ -243,27 +227,30 @@ CONTROL_MEMBER="$(
     awk '/(^|\/)control\.tar\.(gz|xz|zst)$/ { print; exit }' \
         "$MEMBERS_FILE"
 )"
+
 DATA_MEMBER="$(
     awk '/(^|\/)data\.tar\.(gz|xz|zst)$/ { print; exit }' \
         "$MEMBERS_FILE"
 )"
 
 [[ -n "$CONTROL_MEMBER" ]] ||
-    die "IPK 中找不到 control.tar 压缩包"
+    die "IPK 中找不到 control.tar.gz/xz/zst"
 
 [[ -n "$DATA_MEMBER" ]] ||
-    die "IPK 中找不到 data.tar 压缩包"
+    die "IPK 中找不到 data.tar.gz/xz/zst"
 
 # --------------------------------------------------
-# 3. 提取 IPK 成员
+# 3. 提取 IPK 内部成员
 # --------------------------------------------------
 
 extract_ipk_member() {
     local member="$1"
     local output="$2"
 
-    if [[ "$IPK_FORMAT" == "ar" ]]; then
-        # 自行解析 ar 归档，避免 GNU/BSD ar 兼容性问题
+    if [[ "$IPK_FORMAT" == "tar" ]]; then
+        tar -xOf "$IPK_FILE" "$member" > "$output" ||
+            die "无法提取 IPK 成员：$member"
+    else
         python3 - "$IPK_FILE" "$member" "$output" <<'PY'
 import sys
 
@@ -278,6 +265,7 @@ string_table = b""
 
 while pos < len(data):
     header = data[pos:pos + 60]
+
     if len(header) != 60 or header[58:60] != b"`\n":
         sys.exit("无效的 ar 成员头")
 
@@ -296,9 +284,9 @@ while pos < len(data):
         payload = payload[n:]
     elif raw.startswith("/") and raw[1:].isdigit():
         off = int(raw[1:])
-        name = string_table[off:].split(b"/\n", 1)[0].decode(
-            "utf-8", "replace"
-        )
+        name = string_table[off:].split(
+            b"/\n", 1
+        )[0].decode("utf-8", "replace")
 
     if name == wanted:
         with open(out, "wb") as f:
@@ -309,39 +297,13 @@ while pos < len(data):
 
 sys.exit("找不到成员：" + wanted)
 PY
-    else
-        tar -xOf "$IPK_FILE" "$member" > "$output" ||
-            die "无法提取 IPK 成员：$member"
+        [[ -s "$output" ]] ||
+            die "提取的 IPK 成员为空：$member"
     fi
-
-    [[ -s "$output" ]] ||
-        die "提取的成员为空：$member"
 }
 
-extract_inner_tar() {
-    local archive="$1"
-    local destination="$2"
-
-    case "$archive" in
-        *.gz)
-            tar -xzf "$archive" -C "$destination"
-            ;;
-        *.xz)
-            tar -xJf "$archive" -C "$destination"
-            ;;
-        *.zst)
-            command -v zstd >/dev/null 2>&1 ||
-                die "IPK 使用 zstd 压缩，但系统没有 zstd"
-            zstd -dc "$archive" | tar -xf - -C "$destination"
-            ;;
-        *)
-            die "不支持的压缩格式：$archive"
-            ;;
-    esac
-}
-
-CONTROL_DIR="${WORK_DIR}/control"
-DATA_DIR="${WORK_DIR}/data"
+# 根据 IPK 成员的真实后缀命名临时文件。
+# 不要统一命名成 .tar，否则解压函数无法判断压缩格式。
 case "$CONTROL_MEMBER" in
     *.gz)  CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar.gz" ;;
     *.xz)  CONTROL_ARCHIVE="${WORK_DIR}/control-inner.tar.xz" ;;
@@ -356,32 +318,73 @@ case "$DATA_MEMBER" in
     *) die "不支持的 data 压缩格式：$DATA_MEMBER" ;;
 esac
 
-extract_ipk_member "$CONTROL_MEMBER" "$CONTROL_ARCHIVE"
-extract_ipk_member "$DATA_MEMBER" "$DATA_ARCHIVE"
+CONTROL_DIR="${WORK_DIR}/control"
+DATA_DIR="${WORK_DIR}/data"
 
-extract_inner_tar "$CONTROL_ARCHIVE" "$CONTROL_DIR"
-extract_inner_tar "$DATA_ARCHIVE" "$DATA_DIR"
-
+# 清理旧结果后，只解压一次。
 rm -rf "$CONTROL_DIR" "$DATA_DIR"
 mkdir -p "$CONTROL_DIR" "$DATA_DIR"
 
 extract_ipk_member "$CONTROL_MEMBER" "$CONTROL_ARCHIVE"
 extract_ipk_member "$DATA_MEMBER" "$DATA_ARCHIVE"
 
-extract_inner_tar "$CONTROL_ARCHIVE" "$CONTROL_DIR" ||
-    die "解压 control 数据失败"
+# --------------------------------------------------
+# 4. 解压内部压缩包
+# --------------------------------------------------
 
-extract_inner_tar "$DATA_ARCHIVE" "$DATA_DIR" ||
-    die "解压 data 数据失败"
+extract_inner_tar() {
+    local archive="$1"
+    local destination="$2"
+
+    [[ -s "$archive" ]] ||
+        die "压缩文件不存在或为空：$archive"
+
+    # 关键修复：tar -C 目标目录必须先创建。
+    mkdir -p "$destination" ||
+        die "无法创建解压目录：$destination"
+
+    case "$archive" in
+        *.tar.gz)
+            tar -xzf "$archive" -C "$destination" ||
+                die "解压失败：$archive"
+            ;;
+        *.tar.xz)
+            tar -xJf "$archive" -C "$destination" ||
+                die "解压失败：$archive"
+            ;;
+        *.tar.zst)
+            if command -v zstd >/dev/null 2>&1; then
+                zstd -dc "$archive" |
+                    tar -xf - -C "$destination" ||
+                    die "解压失败：$archive"
+            elif tar --help 2>/dev/null | grep -q -- '--zstd'; then
+                tar --zstd -xf "$archive" -C "$destination" ||
+                    die "解压失败：$archive"
+            else
+                die "缺少 zstd 解压支持：$archive"
+            fi
+            ;;
+        *)
+            die "不支持的压缩格式：$archive"
+            ;;
+    esac
+}
+
+log "解压 control 元数据"
+extract_inner_tar "$CONTROL_ARCHIVE" "$CONTROL_DIR"
+
+log "解压 aria2 程序文件"
+extract_inner_tar "$DATA_ARCHIVE" "$DATA_DIR"
 
 CONTROL_FILE="${CONTROL_DIR}/control"
+
 [[ -s "$CONTROL_FILE" ]] ||
     die "IPK 内部缺少 control 文件"
 
 log "IPK 容器及内部数据解包成功"
 
 # --------------------------------------------------
-# 4. 校验 IPK 内部元数据
+# 5. 校验 IPK 元数据
 # --------------------------------------------------
 
 get_control_field() {
@@ -395,20 +398,21 @@ META_ARCH="$(get_control_field Architecture)"
 META_DEPENDS="$(get_control_field Depends || true)"
 
 [[ "$META_NAME" == "$PKG_NAME" ]] ||
-    die "IPK 内部软件包名称不匹配：${META_NAME:-空}"
+    die "IPK 内部包名不匹配：${META_NAME:-空}"
 
-[[ -n "$META_ARCH" ]] ||
-    die "IPK 内部 Architecture 字段为空"
-
-if [[ "$META_ARCH" != "$ARCH" && "$META_ARCH" != "all" ]]; then
-    die "IPK 实际架构不匹配：${META_ARCH}，目标=${ARCH}"
-fi
+[[ "$META_ARCH" == "$ARCH" || "$META_ARCH" == "all" ]] ||
+    die "IPK 实际架构不匹配：${META_ARCH:-空}"
 
 [[ -n "$META_VERSION" ]] ||
     META_VERSION="$IPK_VERSION"
 
+log "内部包名：$META_NAME"
+log "内部版本：$META_VERSION"
+log "内部架构：$META_ARCH"
+log "原始依赖：${META_DEPENDS:-未声明}"
+
 # --------------------------------------------------
-# 5. 复制数据文件并生成本地包装包
+# 6. 生成本地预编译包装包
 # --------------------------------------------------
 
 rm -rf "$PKG_DIR"
@@ -417,8 +421,8 @@ mkdir -p "$FILES_DIR"
 cp -a "$DATA_DIR"/. "$FILES_DIR"/ ||
     die "复制 aria2 文件失败"
 
-# 将常见 Depends 字段转换成 OpenWrt 包依赖。
-# 遇到无法简单解析的依赖表达式时，不自动伪造依赖名。
+# 把简单的依赖名转换为 OpenWrt Makefile 依赖格式。
+# 删除版本约束；复杂的替代依赖表达式不自动伪造。
 DEPENDS_MAKE=""
 
 if [[ -n "$META_DEPENDS" ]]; then
@@ -476,7 +480,7 @@ endef
 EOF
 
 # --------------------------------------------------
-# 6. 更新 .config
+# 7. 更新固件配置
 # --------------------------------------------------
 
 CONFIG_FILE="${OPENWRT_DIR}/.config"
@@ -488,9 +492,10 @@ if [[ -f "$CONFIG_FILE" ]]; then
         "$CONFIG_FILE"
 
     printf '%s\n' 'CONFIG_PACKAGE_aria2-prebuilt=y' >> "$CONFIG_FILE"
+
     log "已启用 CONFIG_PACKAGE_aria2-prebuilt=y"
 else
-    log "警告：未找到 .config，请确保脚本在配置生成后执行"
+    log "警告：尚未生成 .config，请确认后续配置阶段启用本地包"
 fi
 
 log "预编译集成完成"
