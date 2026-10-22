@@ -1,440 +1,349 @@
+
 #!/usr/bin/env bash
-# Aria2 + LuCI + 简体中文：预编译 IPK 集成
-# 参考 scripts/diy-ssrplus.sh 的下载、校验、解包和本地包装逻辑
-# Target: mediatek/filogic
-# Arch: aarch64_cortex-a53
-# Run after feeds are ready, before make defconfig
-# Does NOT compile aria2 or luci-app-aria2 from source.
+# Prebuilt Aria2 integration for ImmortalWrt 24.10-SNAPSHOT.
+# Fixed architecture: aarch64_cortex-a53
+# Run after the OpenWrt source tree exists and before make defconfig.
 
 set -Eeuo pipefail
 
 ARCH="aarch64_cortex-a53"
-OPENWRT_DIR="${OPENWRT_DIR:-$PWD}"
+REPO_ROOT="${REPO_ROOT:-https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/packages/$ARCH}"
+OPENWRT_DIR="${OPENWRT_DIR:-${GITHUB_WORKSPACE:-$PWD}/openwrt}"
 
-# 可通过环境变量覆盖，以匹配自己的 ImmortalWrt 分支
-REPO_ROOT="${ARIA2_REPO_ROOT:-https://downloads.immortalwrt.org/releases/24.10-SNAPSHOT/packages/$ARCH}"
-
-WORK_DIR="$OPENWRT_DIR/tmp/aria2-prebuilt"
-PKG_ROOT="$OPENWRT_DIR/package"
-
-ARIA2_DIR="$PKG_ROOT/aria2-prebuilt"
-LUCI_DIR="$PKG_ROOT/aria2-prebuilt-luci-app"
-I18N_DIR="$PKG_ROOT/aria2-prebuilt-luci-i18n-zh-cn"
+# Allow running from inside the OpenWrt source directory.
+if [[ ! -f "$OPENWRT_DIR/include/toplevel.mk" && -f "$PWD/include/toplevel.mk" ]]; then
+    OPENWRT_DIR="$PWD"
+fi
 
 log() {
-    echo "[Aria2-IPK] $*"
+    # Important: logs must go to stderr so command substitutions stay clean.
+    printf '[Aria2-IPK] %s\n' "$*" >&2
 }
 
 die() {
-    log "ERROR: $*" >&2
+    log "ERROR: $*"
     exit 1
 }
 
-[[ -f "$OPENWRT_DIR/include/toplevel.mk" ]] ||
-    die "$OPENWRT_DIR 不是有效的 OpenWrt 源码目录"
-
-for cmd in curl gzip awk sed grep tr find sort tar ar wc; do
+for cmd in curl gzip awk sed tar ar find grep sort; do
     command -v "$cmd" >/dev/null 2>&1 ||
-        die "缺少命令：$cmd"
+        die "缺少必要命令：$cmd"
 done
 
-mkdir -p "$WORK_DIR"
-mkdir -p "$PKG_ROOT"
+[[ -f "$OPENWRT_DIR/include/toplevel.mk" ]] ||
+    die "找不到 OpenWrt 源码目录：$OPENWRT_DIR"
 
-# 防止重复运行后残留旧包装包
-rm -rf "$ARIA2_DIR" "$LUCI_DIR" "$I18N_DIR"
+PKG_ROOT="$OPENWRT_DIR/package"
+WORK_DIR="$OPENWRT_DIR/tmp/aria2-prebuilt"
+CONFIG_FILE="$OPENWRT_DIR/.config"
 
-# --------------------------------------------------
-# 软件包索引
-# --------------------------------------------------
+mkdir -p "$WORK_DIR" "$PKG_ROOT"
+touch "$CONFIG_FILE"
 
+# Only remove wrapper packages created by this script.
+rm -rf \
+    "$PKG_ROOT/aria2-prebuilt" \
+    "$PKG_ROOT/luci-app-aria2-prebuilt" \
+    "$PKG_ROOT/luci-i18n-aria2-zh-cn-prebuilt"
+
+# Download and validate a repository package index.
 get_index() {
     local repo="$1"
     local index="$WORK_DIR/Packages-${repo}.gz"
     local url="$REPO_ROOT/$repo/Packages.gz"
 
-    if [[ ! -s "$index" ]]; then
+    if [[ ! -s "$index" ]] || ! gzip -t "$index" >/dev/null 2>&1; then
+        rm -f "$index" "$index.tmp"
         log "下载软件包索引：$url"
-        curl --fail --location --retry 3 --retry-all-errors \
-            --connect-timeout 20 --max-time 180 \
-            -o "$index.tmp" "$url" ||
-            {
-                rm -f "$index.tmp"
-                return 1
-            }
 
-        gzip -t "$index.tmp" ||
-            {
-                rm -f "$index.tmp"
-                die "软件包索引损坏：$url"
-            }
+        if ! curl -fsSL \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 20 \
+            --max-time 180 \
+            -o "$index.tmp" "$url"; then
+            rm -f "$index.tmp"
+            log "无法下载索引：$url"
+            return 1
+        fi
+
+        if ! gzip -t "$index.tmp" >/dev/null 2>&1; then
+            rm -f "$index.tmp"
+            log "软件包索引损坏：$url"
+            return 1
+        fi
 
         mv "$index.tmp" "$index"
     fi
 
+    # Return only the file path on stdout.
     printf '%s\n' "$index"
 }
 
-# 从 Packages.gz 精确查询 Package / Filename / Architecture / Version
+# Look up a package in a feed index.
+# Output format: Filename|Architecture|Version|Depends
 lookup_package() {
-    local name="$1"
-    shift
+    local package="$1"
+    local repo="$2"
+    local index
 
-    local repo index result
+    index="$(get_index "$repo")" || return 1
 
-    for repo in "$@"; do
-        index="$(get_index "$repo")" || continue
+    gzip -dc "$index" | awk -v wanted="$package" '
+        BEGIN {
+            RS = ""
+            FS = "\n"
+        }
+        {
+            name = filename = arch = version = depends = ""
 
-        result="$(
-            gzip -dc "$index" |
-            awk -v target="$name" '
-                BEGIN { RS=""; FS="\n" }
-                {
-                    pkg=""; filename=""; arch=""; version=""
-                    for (i=1; i<=NF; i++) {
-                        if ($i ~ /^Package: /)
-                            pkg=substr($i, 10)
-                        else if ($i ~ /^Filename: /)
-                            filename=substr($i, 11)
-                        else if ($i ~ /^Architecture: /)
-                            arch=substr($i, 14)
-                        else if ($i ~ /^Version: /)
-                            version=substr($i, 10)
-                    }
-                    if (pkg == target && filename != "") {
-                        print filename "\t" arch "\t" version
-                        exit
-                    }
-                }
-            '
-        )"
+            for (i = 1; i <= NF; i++) {
+                if ($i ~ /^Package: /)
+                    name = substr($i, 10)
+                else if ($i ~ /^Filename: /)
+                    filename = substr($i, 11)
+                else if ($i ~ /^Architecture: /)
+                    arch = substr($i, 15)
+                else if ($i ~ /^Version: /)
+                    version = substr($i, 10)
+                else if ($i ~ /^Depends: /)
+                    depends = substr($i, 10)
+            }
 
-        if [[ -n "$result" ]]; then
-            printf '%s\n' "$result"
-            return 0
+            if (name == wanted && filename != "") {
+                printf "%s|%s|%s|%s\n", filename, arch, version, depends
+                exit
+            }
+        }
+    '
+}
+
+# Find and download a package from one or more feeds.
+# Output format: downloaded_ipk|Architecture|Version|Depends
+download_ipk() {
+    local package="$1"
+    local repos="$2"
+    local repo metadata filename arch version depends url
+    local -a repo_list
+
+    IFS=' ' read -r -a repo_list <<< "$repos"
+
+    for repo in "${repo_list[@]}"; do
+        log "查询软件包：$package（feed: $repo）"
+
+        if ! metadata="$(lookup_package "$package" "$repo")"; then
+            continue
         fi
+
+        [[ -n "$metadata" ]] || continue
+
+        IFS='|' read -r filename arch version depends <<< "$metadata"
+
+        if [[ -z "$filename" || -z "$version" ]]; then
+            log "索引条目不完整：$package"
+            continue
+        fi
+
+        # Prevent an unexpected architecture from being silently accepted.
+        if [[ "$arch" != "all" && "$arch" != "$ARCH" ]]; then
+            log "跳过架构不匹配的软件包：$package ($arch)"
+            continue
+        fi
+
+        url="$REPO_ROOT/$repo/$filename"
+        local dest="$WORK_DIR/${package}_${version}.ipk"
+
+        log "下载：$url"
+
+        if ! curl -fsSL \
+            --retry 3 \
+            --retry-all-errors \
+            --retry-delay 2 \
+            --connect-timeout 20 \
+            --max-time 300 \
+            -o "$dest.tmp" "$url"; then
+            rm -f "$dest.tmp"
+            log "下载失败：$url"
+            continue
+        fi
+
+        if ! ar t "$dest.tmp" >/dev/null 2>&1; then
+            rm -f "$dest.tmp"
+            log "下载文件不是有效的 IPK：$url"
+            continue
+        fi
+
+        mv "$dest.tmp" "$dest"
+
+        # Stdout contains metadata only; logs go to stderr.
+        printf '%s|%s|%s|%s\n' "$dest" "$arch" "$version" "$depends"
+        return 0
     done
 
     return 1
 }
 
-# --------------------------------------------------
-# IPK 格式检查和解包
-# --------------------------------------------------
+# Convert repository Depends metadata to OpenWrt Makefile dependencies.
+# Rename dependencies that are supplied by our local wrapper packages.
+normalize_depends() {
+    local original_pkg="$1"
+    local depends="${2:-}"
 
-unpack_ipk() {
-    local ipk="$1"
-    local dest="$2"
+    awk -v input="$depends" -v pkg="$original_pkg" '
+        BEGIN {
+            count = split(input, items, ",")
+            output = ""
+            seen = " "
+            for (i = 1; i <= count; i++) {
+                dep = items[i]
+                gsub(/^[ \t]+|[ \t]+$/, "", dep)
 
-    rm -rf "$dest"
-    mkdir -p "$dest"
+                # Drop version constraints, leaving the package name.
+                sub(/[ \t]*\(.*/, "", dep)
+                gsub(/^[ \t]+|[ \t]+$/, "", dep)
 
-    if ar t "$ipk" >/dev/null 2>&1; then
-        (cd "$dest" && ar x "$ipk")
-    elif tar -tf "$ipk" >/dev/null 2>&1; then
-        tar -xf "$ipk" -C "$dest"
-    else
-        die "无效的 IPK 文件：$ipk"
-    fi
-}
+                # Ignore empty dependency entries.
+                if (dep == "")
+                    continue
 
-extract_archive() {
-    local archive="$1"
-    local dest="$2"
+                # Keep the first package in alternative dependency expressions.
+                split(dep, alternatives, /[ \t]*\|[ \t]*/)
+                dep = alternatives[1]
+                gsub(/[ \t]+$/, "", dep)
 
-    case "$archive" in
-        *.tar|*.tar.gz|*.tgz|*.tar.xz|*.tar.zst|*.tar.bz2)
-            tar -xf "$archive" -C "$dest"
-            ;;
-        *)
-            die "不支持的 IPK 内部归档：$archive"
-            ;;
-    esac
-}
+                if (dep == "")
+                    continue
 
-# --------------------------------------------------
-# 下载并校验预编译 IPK
-# --------------------------------------------------
+                if (dep == "aria2")
+                    dep = "aria2-prebuilt"
+                else if (dep == "luci-app-aria2")
+                    dep = "luci-app-aria2-prebuilt"
 
-download_ipk() {
-    local pkg="$1"
-    local repos="$2"
-    local meta filename pkgarch version url output
-
-    local -a repo_list
-    IFS=' ' read -r -a repo_list <<< "$repos"
-
-    meta="$(lookup_package "$pkg" "${repo_list[@]}")" ||
-        return 1
-
-    IFS=$'\t' read -r filename pkgarch version <<< "$meta"
-
-    [[ -n "$filename" && -n "$pkgarch" ]] ||
-        die "$pkg 的软件包元数据不完整"
-
-    if [[ "$pkgarch" != "all" && "$pkgarch" != "$ARCH" ]]; then
-        die "$pkg 架构不匹配：$pkgarch（期望 all 或 $ARCH）"
-    fi
-
-    url="$REPO_ROOT/$filename"
-    output="$WORK_DIR/$(basename "$filename")"
-
-    log "下载 $pkg $version [$pkgarch]"
-    curl --fail --location --retry 3 --retry-all-errors \
-        --retry-delay 2 --connect-timeout 20 --max-time 300 \
-        -A 'Mozilla/5.0 Aria2-prebuilt-build' \
-        -o "$output.tmp" "$url" ||
-        {
-            rm -f "$output.tmp"
-            die "下载失败：$url"
-        }
-
-    [[ -s "$output.tmp" ]] || die "下载文件为空：$pkg"
-    ar t "$output.tmp" >/dev/null 2>&1 ||
-        die "下载结果不是有效的 IPK：$pkg"
-
-    mv "$output.tmp" "$output"
-
-    printf '%s\t%s\t%s\n' "$output" "$pkgarch" "$version"
-}
-
-# --------------------------------------------------
-# 读取依赖并转换为本地预编译包装包依赖
-# --------------------------------------------------
-
-read_dependencies() {
-    local ipk="$1"
-    local wrapper="$2"
-    local outer="$WORK_DIR/read-control"
-    local cdir="$WORK_DIR/read-control-data"
-    local control_archive control deps dep
-
-    unpack_ipk "$ipk" "$outer"
-
-    control_archive="$(
-        find "$outer" -maxdepth 1 -type f \
-            -name 'control.tar.*' -print -quit
-    )"
-
-    [[ -n "$control_archive" ]] ||
-        die "IPK 缺少 control 归档：$ipk"
-
-    rm -rf "$cdir"
-    mkdir -p "$cdir"
-    extract_archive "$control_archive" "$cdir"
-
-    local control="$cdir/control"
-    [[ -f "$control" ]] || control="$cdir/./control"
-    [[ -f "$control" ]] || die "IPK 缺少 control 文件：$ipk"
-
-    deps="$(
-        awk '
-            BEGIN { IGNORECASE=1 }
-            /^Depends:[[:space:]]*/ {
-                sub(/^[^:]*:[[:space:]]*/, "")
-                print
-                exit
+                if (index(seen, " " dep " ") == 0) {
+                    output = output " +" dep
+                    seen = seen dep " "
+                }
             }
-        ' "$control" |
-        tr ',' '\n' |
-        sed -E \
-            -e 's/[[:space:]]*\([^)]*\)//g' \
-            -e 's/^[[:space:]]+//' \
-            -e 's/[[:space:]]+$//'
-    )"
-
-    local result=""
-    while IFS= read -r dep; do
-        dep="${dep%%[[:space:]]*}"
-        [[ -z "$dep" ]] && continue
-
-        # 这些由基础系统提供，不作为显式包装依赖
-        case "$dep" in
-            libc|libgcc|libpthread|librt|libdl|kernel)
-                continue
-                ;;
-        esac
-
-        # 将包间依赖指向本地预编译包装包
-        case "$dep" in
-            aria2)
-                dep="aria2-prebuilt"
-                ;;
-            luci-app-aria2)
-                dep="aria2-prebuilt-luci-app"
-                ;;
-        esac
-
-        # 不重复追加依赖
-        case " $result " in
-            *" +$dep "*) ;;
-            *)
-                result="${result:+$result }+$dep"
-                ;;
-        esac
-    done <<< "$deps"
-
-    printf '%s' "$result"
+            sub(/^ /, "", output)
+            print output
+        }
+    '
 }
 
-# --------------------------------------------------
-# 把官方 IPK 包装成本地 OpenWrt 软件包
-# 保留原始文件载荷，不执行上游源码编译
-# --------------------------------------------------
-
+# Extract the data payload and wrap it as a local no-source-build package.
 wrap_ipk() {
     local ipk="$1"
-    local wrapper="$2"
-    local pkgarch="$3"
-    local target_dir="$4"
-    local category="$5"
+    local original_pkg="$2"
+    local wrapper_pkg="$3"
+    local pkgarch="$4"
+    local version="$5"
+    local depends="$6"
+    local pkgdir="$PKG_ROOT/$wrapper_pkg"
+    local extract_dir="$WORK_DIR/extract-$wrapper_pkg"
+    local data_tar control_tar normalized_depends
 
-    local outer="$WORK_DIR/${wrapper}-outer"
-    local payload="$WORK_DIR/${wrapper}-payload"
-    local cdir="$WORK_DIR/${wrapper}-control"
-    local control_archive data_archive control
-    local original_pkg version pkg_version pkg_release depends
+    [[ -s "$ipk" ]] || die "IPK 文件不存在或为空：$ipk"
 
-    unpack_ipk "$ipk" "$outer"
+    rm -rf "$pkgdir" "$extract_dir"
+    mkdir -p "$pkgdir/files" "$extract_dir"
 
-    control_archive="$(
-        find "$outer" -maxdepth 1 -type f \
-            -name 'control.tar.*' -print -quit
-    )"
-    data_archive="$(
-        find "$outer" -maxdepth 1 -type f \
-            -name 'data.tar.*' -print -quit
-    )"
+    log "解包：$original_pkg"
 
-    [[ -n "$control_archive" && -n "$data_archive" ]] ||
-        die "IPK 缺少 control/data 归档：$ipk"
+    (
+        cd "$extract_dir"
+        ar x "$ipk"
+    ) || die "无法解开 IPK：$ipk"
 
-    rm -rf "$cdir" "$payload"
-    mkdir -p "$cdir" "$payload"
+    data_tar="$(find "$extract_dir" -maxdepth 1 -type f -name 'data.tar.*' -print -quit)"
+    control_tar="$(find "$extract_dir" -maxdepth 1 -type f -name 'control.tar.*' -print -quit)"
 
-    extract_archive "$control_archive" "$cdir"
+    [[ -n "$data_tar" && -f "$data_tar" ]] ||
+        die "IPK 中缺少 data.tar：$ipk"
 
-    control="$cdir/control"
-    [[ -f "$control" ]] || control="$cdir/./control"
-    [[ -f "$control" ]] || die "找不到 control 文件：$ipk"
+    [[ -n "$control_tar" && -f "$control_tar" ]] ||
+        die "IPK 中缺少 control.tar：$ipk"
 
-    original_pkg="$(
-        awk -F': *' 'tolower($1)=="package" {print $2; exit}' "$control"
-    )"
-    version="$(
-        awk -F': *' 'tolower($1)=="version" {print $2; exit}' "$control"
-    )"
+    tar -xf "$data_tar" -C "$pkgdir/files" ||
+        die "解压数据文件失败：$ipk"
 
-    [[ -n "$original_pkg" && -n "$version" ]] ||
-        die "IPK 缺少 Package 或 Version 元数据"
+    # Prefer Depends from the IPK control file if present.
+    local control_file="$WORK_DIR/control-$wrapper_pkg"
+    rm -rf "$control_file"
+    mkdir -p "$control_file"
+    tar -xf "$control_tar" -C "$control_file" ||
+        die "解压控制信息失败：$ipk"
 
-    if [[ "$version" =~ ^(.+)-r([0-9]+)$ ]]; then
-        pkg_version="${BASH_REMATCH[1]}"
-        pkg_release="${BASH_REMATCH[2]}"
-    else
-        pkg_version="$version"
-        pkg_release=1
+    local control_path
+    control_path="$(find "$control_file" -type f -name control -print -quit)"
+
+    if [[ -n "$control_path" && -f "$control_path" ]]; then
+        local control_depends
+        control_depends="$(awk '
+            /^Depends: / {
+                sub(/^Depends: /, "")
+                printf "%s", $0
+                active = 1
+                next
+            }
+            active && /^[ \t]/ {
+                gsub(/^[ \t]+/, "")
+                printf " %s", $0
+                next
+            }
+            active {
+                exit
+            }
+        ' "$control_path")"
+
+        [[ -z "$control_depends" ]] || depends="$control_depends"
     fi
 
-    extract_archive "$data_archive" "$payload"
+    normalized_depends="$(normalize_depends "$original_pkg" "$depends")"
 
-    mkdir -p "$target_dir/files"
-    cp -a "$payload/." "$target_dir/files/"
-
-    depends="$(read_dependencies "$ipk" "$wrapper")"
-
-    # 语言包依赖本地包装后的 LuCI 应用
-    if [[ "$wrapper" == "aria2-prebuilt-luci-i18n-zh-cn" ]]; then
-        depends="${depends:+$depends }+aria2-prebuilt-luci-app"
-    fi
-
-    cat > "$target_dir/Makefile" <<MAKEFILE
+    cat > "$pkgdir/Makefile" <<MAKEFILE
 include \$(TOPDIR)/rules.mk
 
-PKG_NAME:=$wrapper
-PKG_VERSION:=$pkg_version
-PKG_RELEASE:=$pkg_release
+PKG_NAME:=$wrapper_pkg
+PKG_VERSION:=$version
+PKG_RELEASE:=1
 PKGARCH:=$pkgarch
 
 include \$(INCLUDE_DIR)/package.mk
 
-define Package/$wrapper
+define Package/$wrapper_pkg
   SECTION:=net
-  CATEGORY:=$category
-  TITLE:=$original_pkg (prebuilt payload)
-  DEPENDS:=$depends
+  CATEGORY:=Network
+  TITLE:=$original_pkg (prebuilt)
+  DEPENDS:=$normalized_depends
 endef
 
-define Package/$wrapper/description
-  Prebuilt $original_pkg payload from ImmortalWrt package repository.
-  No upstream source compilation.
+define Package/$wrapper_pkg/description
+  Prebuilt $original_pkg payload from the ImmortalWrt package repository.
+  No source compilation is performed by this wrapper.
 endef
 
 define Build/Compile
 endef
 
-define Package/$wrapper/install
+define Package/$wrapper_pkg/install
 	\$(INSTALL_DIR) \$(1)
 	\$(CP) ./files/. \$(1)/
 endef
 
-\$(eval \$(call BuildPackage,$wrapper))
+\$(eval \$(call BuildPackage,$wrapper_pkg))
 MAKEFILE
 
-    log "已包装 $original_pkg $version -> $wrapper [$pkgarch]"
+    log "已生成：$pkgdir（PKGARCH=$pkgarch，版本=$version）"
 }
 
-# --------------------------------------------------
-# 获取三个软件包
-# --------------------------------------------------
-
-log "Repository: $REPO_ROOT"
-log "Architecture fixed to $ARCH"
-
-ARIA2_META="$(download_ipk aria2 "packages base")" ||
-    die "仓库中找不到 aria2 预编译 IPK"
-
-LUCI_META="$(download_ipk luci-app-aria2 "luci")" ||
-    die "仓库中找不到 luci-app-aria2 预编译 IPK"
-
-# 中文包可选：找不到时继续，但会明确提示
-I18N_META=""
-if I18N_META="$(download_ipk luci-i18n-aria2-zh-cn "luci")"; then
-    log "找到简体中文语言包"
-else
-    log "WARN: 未找到 luci-i18n-aria2-zh-cn，将不集成中文包"
-fi
-
-IFS=$'\t' read -r ARIA2_IPK ARIA2_ARCH ARIA2_VERSION <<< "$ARIA2_META"
-IFS=$'\t' read -r LUCI_IPK LUCI_ARCH LUCI_VERSION <<< "$LUCI_META"
-
-wrap_ipk "$ARIA2_IPK" \
-    "aria2-prebuilt" "$ARIA2_ARCH" "$ARIA2_DIR" "Network"
-
-wrap_ipk "$LUCI_IPK" \
-    "aria2-prebuilt-luci-app" "$LUCI_ARCH" "$LUCI_DIR" "LuCI"
-
-if [[ -n "$I18N_META" ]]; then
-    IFS=$'\t' read -r I18N_IPK I18N_ARCH I18N_VERSION <<< "$I18N_META"
-
-    wrap_ipk "$I18N_IPK" \
-        "aria2-prebuilt-luci-i18n-zh-cn" \
-        "$I18N_ARCH" "$I18N_DIR" "LuCI"
-fi
-
-# --------------------------------------------------
-# 配置 .config：只选择包装包，关闭同名源码包
-# --------------------------------------------------
-
-CONFIG_FILE="$OPENWRT_DIR/.config"
-touch "$CONFIG_FILE"
-
+# Enable or disable a Kconfig package symbol without duplicate entries.
 set_symbol() {
     local symbol="$1"
     local value="$2"
 
     sed -i \
-        -e "/^${symbol}=.*$/d" \
+        -e "/^${symbol}=.*/d" \
         -e "/^# ${symbol} is not set$/d" \
         "$CONFIG_FILE"
 
@@ -445,19 +354,72 @@ set_symbol() {
     fi
 }
 
+log "OpenWrt 目录：$OPENWRT_DIR"
+log "固定软件包架构：$ARCH"
+log "软件仓库：$REPO_ROOT"
+
+# 1. aria2 command-line program.
+ARIA2_META="$(download_ipk aria2 "packages base")" ||
+    die "在 packages/base 仓库中找不到 aria2 预编译 IPK。请检查仓库索引、版本和网络连接。"
+
+IFS='|' read -r ARIA2_IPK ARIA2_ARCH ARIA2_VERSION ARIA2_DEPENDS <<< "$ARIA2_META"
+
+[[ "$ARIA2_ARCH" == "all" ]] && ARIA2_ARCH="$ARCH"
+
+wrap_ipk \
+    "$ARIA2_IPK" \
+    "aria2" \
+    "aria2-prebuilt" \
+    "$ARIA2_ARCH" \
+    "$ARIA2_VERSION" \
+    "$ARIA2_DEPENDS"
+
+# 2. LuCI web interface.
+APP_META="$(download_ipk luci-app-aria2 "luci packages")" ||
+    die "找不到 luci-app-aria2 预编译 IPK。请检查 luci/packages 仓库索引。"
+
+IFS='|' read -r APP_IPK APP_ARCH APP_VERSION APP_DEPENDS <<< "$APP_META"
+
+wrap_ipk \
+    "$APP_IPK" \
+    "luci-app-aria2" \
+    "luci-app-aria2-prebuilt" \
+    "${APP_ARCH:-all}" \
+    "$APP_VERSION" \
+    "$APP_DEPENDS"
+
+# 3. Simplified Chinese translation is optional.
+I18N_META=""
+if I18N_META="$(download_ipk luci-i18n-aria2-zh-cn "luci")"; then
+    IFS='|' read -r I18N_IPK I18N_ARCH I18N_VERSION I18N_DEPENDS <<< "$I18N_META"
+
+    wrap_ipk \
+        "$I18N_IPK" \
+        "luci-i18n-aria2-zh-cn" \
+        "luci-i18n-aria2-zh-cn-prebuilt" \
+        "${I18N_ARCH:-all}" \
+        "$I18N_VERSION" \
+        "$I18N_DEPENDS"
+
+    set_symbol CONFIG_PACKAGE_luci-i18n-aria2-zh-cn-prebuilt y
+else
+    log "未找到简体中文语言包，继续构建；可在固件中另行安装。"
+    set_symbol CONFIG_PACKAGE_luci-i18n-aria2-zh-cn-prebuilt n
+fi
+
+# Disable the source packages so the build system does not compile them.
 set_symbol CONFIG_PACKAGE_aria2 n
 set_symbol CONFIG_PACKAGE_luci-app-aria2 n
 set_symbol CONFIG_PACKAGE_luci-i18n-aria2-zh-cn n
 
+# Enable the local wrapper packages.
 set_symbol CONFIG_PACKAGE_aria2-prebuilt y
-set_symbol CONFIG_PACKAGE_aria2-prebuilt-luci-app y
+set_symbol CONFIG_PACKAGE_luci-app-aria2-prebuilt y
 
-if [[ -n "$I18N_META" ]]; then
-    set_symbol CONFIG_PACKAGE_aria2-prebuilt-luci-i18n-zh-cn y
-fi
-
-log "预编译 Aria2 集成完成"
-log "请继续执行 make defconfig"
-log "检查包装包配置是否保留："
-grep -E '^CONFIG_PACKAGE_aria2-prebuilt.*=y$' "$CONFIG_FILE" || true
-log "注意：依赖库仍由现有 feeds/固件配置提供；本脚本不编译 Aria2 本体。"
+log "Aria2 预编译包已集成。"
+log "请在工作流中确保本脚本运行于 make defconfig 之前。"
+log "检查最终 .config 中以下选项是否保留为 y："
+log "  CONFIG_PACKAGE_aria2-prebuilt=y"
+log "  CONFIG_PACKAGE_luci-app-aria2-prebuilt=y"
+log "  CONFIG_PACKAGE_luci-i18n-aria2-zh-cn-prebuilt（若仓库提供）"
+log "注意：预编译 IPK 必须与固件的 libc、依赖库及软件包版本兼容。"
