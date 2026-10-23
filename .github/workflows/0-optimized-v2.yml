@@ -18,6 +18,7 @@ on:
           - "cudy-tr3000-128M"
           - "QLB-4Pro"
           - "ikuai-q6000-nand"
+          - "ikuai-q6000-emmc"
           - "all"
 
       repo:
@@ -145,8 +146,11 @@ jobs:
               MATRIX='["ikuai-q6000-nand"]'
               ;;
 
+            ikuai-q6000-emmc)
+              MATRIX='["ikuai-q6000-emmc"]'
+              ;;
             all)
-              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand"]'
+              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand",,"ikuai-q6000-emmc"]'
               ;;
 
             *)
@@ -516,6 +520,10 @@ jobs:
               "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-nand.sh
               ;;
 
+            ikuai-q6000-emmc)
+              echo "Apply ikuai-q6000-emmc"
+              "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-emmc.sh
+              ;;
             *)
               echo "ERROR: Unknown device: $DEVICE"
               exit 1
@@ -558,6 +566,9 @@ jobs:
               CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
               ;;
 
+            ikuai-q6000-emmc)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-emmc.config"
+              ;;
             *)
               echo "ERROR: Unknown device: $DEVICE"
               exit 1
