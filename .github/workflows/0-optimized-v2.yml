@@ -150,7 +150,7 @@ jobs:
               MATRIX='["ikuai-q6000-emmc"]'
               ;;
             all)
-              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand",,"ikuai-q6000-emmc"]'
+              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand","ikuai-q6000-emmc"]'
               ;;
 
             *)
