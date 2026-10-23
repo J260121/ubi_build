@@ -8,7 +8,7 @@
 #include "mt7986a.dtsi"
 
 / {
-	model = "iKuai-Q6000";
+	model = "iKuai-Q6000 nand";
 	compatible = "ikuai,q6000", "mediatek,mt7986a";
 
 	aliases {
