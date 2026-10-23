@@ -35,10 +35,10 @@ define Device/ikuai-q6000-emmc\
   DEVICE_MODEL := q6000\
   DEVICE_DTS := mt7986a-ikuai-q6000-emmc\
   DEVICE_DTS_DIR := ../dts\
-  DEVICE_PACKAGES :=  \
+  DEVICE_PACKAGES :=  \\
 	e2fsprogs f2fsck mkf2fs\
   KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb\
-  KERNEL_INITRAMFS := kernel-bin | lzma | \
+  KERNEL_INITRAMFS := kernel-bin | lzma | \\
         fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k\
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\
 endef\
