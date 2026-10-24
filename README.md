@@ -1,4 +1,4 @@
-<img src="image/qq-group.png" alt="固件 Releases">
+<img src="image/qq-group.png" alt="固件 Releases"><img src="image/qq-group.png" alt="固件 Releases">
 
 # ImmortalWrt 云编译项目
 
