@@ -1,4 +1,5 @@
-<img src="image/qq-group.png" alt="固件 Releases"><img src="image/qq-group.png" alt="固件 Releases">
+# QQ群
+<img src="image/qq-group.png"><img src="image/xianyu.jpg">
 
 # ImmortalWrt 云编译项目
 
