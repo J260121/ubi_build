@@ -1,5 +1,5 @@
 # QQ群
-<img src="image/qq-group.png"><img src="image/xianyu.jpg">
+<img src="image/qq-group.png">
 
 # ImmortalWrt 云编译项目
 
