@@ -1,4 +1,4 @@
-# QQ群
+# QQ群 与 闲鱼
 <img src="image/qq-group.png">
 
 # ImmortalWrt 云编译项目
