@@ -1,4 +1,4 @@
-![QQ群二维码](images/qq-group.png)
+(images/qq-group.png)
 
 # ImmortalWrt 云编译项目
 
