@@ -1,6 +1,3 @@
-
-
-
 // SPDX-License-Identifier: GPL-2.0-or-later OR MIT
 /*
  * Copyright (C) 2023 Tianling Shen <cnsztl@immortalwrt.org>
@@ -14,8 +11,9 @@
 #include "mt7986a.dtsi"
 
 / {
-	model = "iKuai-Q6000 emmc";
+	model = "ikuai q6000 emmc";
 	compatible = "ikuai,q6000", "mediatek,mt7986a";
+
 	aliases {
 		led-boot = &red_led;
 		led-failsafe = &red_led;
@@ -36,37 +34,36 @@
 	gpio-keys {
 		compatible = "gpio-keys";
 
-		button-0 {
-			label = "reset";
-			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_RESTART>;
-		};
+ 		button-reset {
+ 			label = "reset";
+ 			linux,code = <KEY_RESTART>;
+ 			gpios = <&pio 7 GPIO_ACTIVE_LOW>;
+ 		};
 
-		button-1 {
-			label = "wps";
-			gpios = <&pio 15 GPIO_ACTIVE_LOW>;
-			linux,code = <KEY_WPS_BUTTON>;
-		};
+ 		button-wps {
+ 			label = "wps";
+ 			linux,code = <KEY_WPS_BUTTON>;
+ 			gpios = <&pio 15 GPIO_ACTIVE_LOW>;
+ 		};
 	};
 
-
-	leds-gpio {
+	leds {
 		compatible = "gpio-leds";
 
-		led_green: green {
+		led_green: led-0 {
  			label = "green:status";
  			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
  		};
 
- 		led_blue: blue {
+ 		led_blue: led-1 {
  			label = "blue:status";
  			gpios = <&pio 2 GPIO_ACTIVE_LOW>;
  		};
  			
-		led_red: red {
+		led_red: led-2 {
  			label = "red:status";
 			gpios = <&pio 21 GPIO_ACTIVE_LOW>;
-		};
+ 		};
 	};
 
 	reg_1p8v: regulator-1p8v {
@@ -285,6 +282,7 @@
 	ports {
 		#address-cells = <1>;
 		#size-cells = <0>;
+
 
 
 		port@2 {
