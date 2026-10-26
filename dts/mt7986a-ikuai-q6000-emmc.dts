@@ -1,8 +1,14 @@
-// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+
+
+// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
+/*
+ * Copyright (C) 2023 Tianling Shen <cnsztl@immortalwrt.org>
+ */
 
 /dts-v1/;
-#include <dt-bindings/input/input.h>
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 #include <dt-bindings/leds/common.h>
 
 #include "mt7986a.dtsi"
@@ -10,21 +16,21 @@
 / {
 	model = "iKuai-Q6000 emmc";
 	compatible = "ikuai,q6000", "mediatek,mt7986a";
-
 	aliases {
+		led-boot = &red_led;
+		led-failsafe = &red_led;
+		led-running = &green_led;
+		led-upgrade = &green_led;
 		serial0 = &uart0;
-		led-boot = &led_red;
-		led-failsafe = &led_red;
-		led-running = &led_green;
-		led-upgrade = &led_blue;
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,115200n8 earlycon=uart8250,mmio32,0x11002000";
+		bootargs = "root=PARTLABEL=rootfs rootwait rootfstype=squashfs,f2fs";
+		stdout-path = "serial0:115200n8";
 	};
 
 	memory@40000000 {
-		reg = <0 0x40000000 0 0x20000000>;
+		reg = <0 0x40000000 0 0x40000000>;
 	};
 
 	gpio-keys {
@@ -42,6 +48,7 @@
 			linux,code = <KEY_WPS_BUTTON>;
 		};
 	};
+
 
 	leds-gpio {
 		compatible = "gpio-leds";
@@ -61,6 +68,7 @@
 			gpios = <&pio 21 GPIO_ACTIVE_LOW>;
 		};
 	};
+
 	reg_1p8v: regulator-1p8v {
 		compatible = "regulator-fixed";
 		regulator-name = "fixed-1.8V";
@@ -79,7 +87,6 @@
 		regulator-always-on;
 	};
 };
-
 
 &crypto {
 	status = "okay";
@@ -278,6 +285,7 @@
 	ports {
 		#address-cells = <1>;
 		#size-cells = <0>;
+
 
 		port@2 {
 			reg = <2>;
