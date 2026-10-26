@@ -61,6 +61,28 @@
 			gpios = <&pio 21 GPIO_ACTIVE_LOW>;
 		};
 	};
+	reg_1p8v: regulator-1p8v {
+		compatible = "regulator-fixed";
+		regulator-name = "fixed-1.8V";
+		regulator-min-microvolt = <1800000>;
+		regulator-max-microvolt = <1800000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+
+	reg_3p3v: regulator-3p3v {
+		compatible = "regulator-fixed";
+		regulator-name = "fixed-3.3V";
+		regulator-min-microvolt = <3300000>;
+		regulator-max-microvolt = <3300000>;
+		regulator-boot-on;
+		regulator-always-on;
+	};
+};
+
+
+&crypto {
+	status = "okay";
 };
 
 &eth {
@@ -70,6 +92,10 @@
 		compatible = "mediatek,eth-mac";
 		reg = <0>;
 		phy-mode = "2500base-x";
+
+		nvmem-cells = <&macaddr_factory_2a 0>;
+		nvmem-cell-names = "mac-address";
+
 		fixed-link {
 			speed = <2500>;
 			full-duplex;
@@ -80,8 +106,11 @@
 	gmac1: mac@1 {
 		compatible = "mediatek,eth-mac";
 		reg = <1>;
-		phy-handle = <&phy7>;
 		phy-mode = "2500base-x";
+		phy-handle = <&phy6>;
+
+		nvmem-cells = <&macaddr_factory_24 0>;
+		nvmem-cell-names = "mac-address";
 	};
 
 	mdio: mdio-bus {
@@ -91,6 +120,16 @@
 };
 
 &mdio {
+	phy6: phy@6 {
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <6>;
+
+		reset-gpios = <&pio 6 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <15000>;
+		reset-deassert-us = <68000>;
+		realtek,aldps-enable;
+	};
+
 	switch: switch@1f {
 		compatible = "mediatek,mt7531";
 		reg = <31>;
@@ -100,36 +139,124 @@
 		interrupt-parent = <&pio>;
 		interrupts = <66 IRQ_TYPE_LEVEL_HIGH>;
 	};
+};
 
-	phy7: phy@7 {
-		compatible = "ethernet-phy-ieee802.3-c45";
-		reg = <3>;
-		reset-assert-us = <100000>;
-		reset-deassert-us = <100000>;
-		reset-gpios = <&pio 6 GPIO_ACTIVE_LOW>;
-		realtek,aldps-enable;
+&mmc0 {
+	bus-width = <8>;
+	cap-mmc-highspeed;
+	hs400-ds-delay = <0x14014>;
+	max-frequency = <200000000>;
+	mmc-hs200-1_8v;
+	mmc-hs400-1_8v;
+	no-sd;
+	no-sdio;
+	non-removable;
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc0_pins_default>;
+	pinctrl-1 = <&mmc0_pins_uhs>;
+	vmmc-supply = <&reg_3p3v>;
+	vqmmc-supply = <&reg_1p8v>;
+	status = "okay";
+
+	card@0 {
+		compatible = "mmc-card";
+		reg = <0>;
+
+		block {
+			compatible = "block-device";
+
+			partitions {
+				block-partition-factory {
+					partname = "factory";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						eeprom_factory_0: eeprom@0 {
+							reg = <0x0 0x1000>;
+						};
+
+						macaddr_factory_24: macaddr@24 {
+							compatible = "mac-base";
+							reg = <0x24 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
+
+						macaddr_factory_2a: macaddr@2a {
+							compatible = "mac-base";
+							reg = <0x2a 0x6>;
+							#nvmem-cell-cells = <1>;
+						};
+					};
+				};
+
+			};
+		};
 	};
 };
 
 &pio {
-	spi_flash_pins: spi-flash-pins-33-to-38 {
+	mmc0_pins_default: mmc0-pins-default {
 		mux {
-			function = "spi";
-			groups = "spi0", "spi0_wp_hold";
+			function = "emmc";
+			groups = "emmc_51";
 		};
-		conf-pu {
-			pins = "SPI2_CS", "SPI2_HOLD", "SPI2_WP";
-			drive-strength = <8>;
-			mediatek,pull-up-adv = <0>; /* bias-disable */
+		conf-cmd-dat {
+			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2",
+			       "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5",
+			       "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
+			input-enable;
+			drive-strength = <4>;
+			mediatek,pull-up-adv = <1>;
 		};
-		conf-pd {
-			pins = "SPI2_CLK", "SPI2_MOSI", "SPI2_MISO";
-			drive-strength = <8>;
-			mediatek,pull-down-adv = <0>; /* bias-disable */
+		conf-clk {
+			pins = "EMMC_CK";
+			drive-strength = <6>;
+			mediatek,pull-down-adv = <2>;
+		};
+		conf-ds {
+			pins = "EMMC_DSL";
+			mediatek,pull-down-adv = <2>;
+		};
+		conf-rst {
+			pins = "EMMC_RSTB";
+			drive-strength = <4>;
+			mediatek,pull-up-adv = <1>;
 		};
 	};
 
-	wf_2g_5g_pins: wf_2g_5g-pins {
+	mmc0_pins_uhs: mmc0-uhs-pins {
+		mux {
+			function = "emmc";
+			groups = "emmc_51";
+		};
+		conf-cmd-dat {
+			pins = "EMMC_DATA_0", "EMMC_DATA_1", "EMMC_DATA_2",
+			       "EMMC_DATA_3", "EMMC_DATA_4", "EMMC_DATA_5",
+			       "EMMC_DATA_6", "EMMC_DATA_7", "EMMC_CMD";
+			input-enable;
+			drive-strength = <4>;
+			mediatek,pull-up-adv = <1>;
+		};
+		conf-clk {
+			pins = "EMMC_CK";
+			drive-strength = <6>;
+			mediatek,pull-down-adv = <2>;
+		};
+		conf-ds {
+			pins = "EMMC_DSL";
+			mediatek,pull-down-adv = <2>;
+		};
+		conf-rst {
+			pins = "EMMC_RSTB";
+			drive-strength = <4>;
+			mediatek,pull-up-adv = <1>;
+		};
+	};
+
+	wf_2g_5g_pins: wf-2g-5g-pins {
 		mux {
 			function = "wifi";
 			groups = "wf_2g", "wf_5g";
@@ -143,72 +270,6 @@
 			       "WF1_HB5", "WF1_HB6", "WF1_HB7", "WF1_HB8",
 			       "WF1_TOP_CLK", "WF1_TOP_DATA";
 			drive-strength = <4>;
-		};
-	};
-};
-
-&spi0 {
-	pinctrl-names = "default";
-	pinctrl-0 = <&spi_flash_pins>;
-	status = "okay";
-
-	flash@0 {
-		compatible = "spi-nand";
-		#address-cells = <1>;
-		#size-cells = <1>;
-		reg = <0>;
-
-		spi-max-frequency = <20000000>;
-		spi-tx-bus-width = <4>;
-		spi-rx-bus-width = <4>;
-
-		mediatek,nmbm;
-		mediatek,bmt-max-ratio = <1>;
-		mediatek,bmt-max-reserved-blocks = <64>;
-
-		partitions {
-			compatible = "fixed-partitions";
-			#address-cells = <1>;
-			#size-cells = <1>;
-
-			partition@0 {
-				label = "BL2";
-				reg = <0x000000 0x100000>;
-				//read-only;
-			};
-
-			partition@100000 {
-				label = "u-boot-env";
-				reg = <0x100000 0x80000>;
-				//read-only;
-			};
-
-			partition@180000 {
-				label = "Factory";
-				reg = <0x180000 0x200000>;
-				//read-only;
-
-				nvmem-layout {
-					compatible = "fixed-layout";
-					#address-cells = <1>;
-					#size-cells = <1>;
-
-					eeprom_factory_0: eeprom@0 {
-						reg = <0x0 0x1000>;
-					};
-				};
-			};
-
-			partition@380000 {
-				label = "FIP";
-				reg = <0x380000 0x200000>;
-				//read-only;
-			};
-
-			partition@580000 {
-				label = "ubi";
-				reg = <0x580000 0x7200000>;
-			};
 		};
 	};
 };
@@ -227,15 +288,14 @@
 			reg = <3>;
 			label = "lan2";
 		};
-		
+
 		port@4 {
-		    reg = <4>;
-		    label = "lan1";
+			reg = <4>;
+			label = "lan1";
 		};
 
 		port@6 {
 			reg = <6>;
-			label = "cpu";
 			ethernet = <&gmac0>;
 			phy-mode = "2500base-x";
 
@@ -248,13 +308,8 @@
 	};
 };
 
-&wifi {
+&trng {
 	status = "okay";
-	pinctrl-names = "default";
-	pinctrl-0 = <&wf_2g_5g_pins>;
-
-	nvmem-cells = <&eeprom_factory_0>;
-	nvmem-cell-names = "eeprom";
 };
 
 &uart0 {
@@ -262,5 +317,13 @@
 };
 
 &watchdog {
+	status = "okay";
+};
+
+&wifi {
+	nvmem-cells = <&eeprom_factory_0>;
+	nvmem-cell-names = "eeprom";
+	pinctrl-names = "default";
+	pinctrl-0 = <&wf_2g_5g_pins>;
 	status = "okay";
 };
