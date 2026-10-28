@@ -327,7 +327,9 @@ jobs:
             xmlto \
             xxd \
             zlib1g-dev \
-            zstd
+            zstd \
+            ucitools
+
 
           sudo apt-get clean
 
