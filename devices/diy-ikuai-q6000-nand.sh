@@ -9,7 +9,17 @@
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
 #
-
+WIFI_FILE="./package/mtk/applications/mtwifi-cfg/files/mtwifi.sh"
+WRT_SSID="ikq6000-nd"
+WRT_WORD="12345678"
+if [ -f "$WIFI_FILE" ]; then
+	#修改WIFI名称
+	sed -i "s/ImmortalWrt/$WRT_SSID/g" $WIFI_FILE
+	#修改WIFI加密
+	sed -i "s/encryption=.*/encryption='psk2+ccmp'/g" $WIFI_FILE
+	#修改WIFI密码
+	sed -i "/set wireless.default_\${dev}.encryption='psk2+ccmp'/a \\\t\t\t\t\t\set wireless.default_\${dev}.key='$WRT_WORD'" $WIFI_FILE
+fi
 # Modify default IP
 #sed -i 's/192.168.1.1/192.168.50.5/g' package/base-files/files/bin/config_generate
 
