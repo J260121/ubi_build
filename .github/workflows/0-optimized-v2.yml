@@ -1271,7 +1271,13 @@ jobs:
           - \`staging_dir\`
           - kernel build artifacts
           - target image artifacts
-
+          
+          ### Firmware Basic Information
+          
+          Web address:192.168.6.1
+          
+          wifi password:12345678
+          
           EOF
 
           echo "========================================"
