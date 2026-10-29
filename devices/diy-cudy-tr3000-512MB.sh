@@ -8,18 +8,7 @@
 #
 # This is free software, licensed under the MIT License.
 # See /LICENSE for more information.
-#修改wifi相关
-WIFI_FILE="./package/mtk/applications/mtwifi-cfg/files/mtwifi.sh"
-WRT_SSID="cudy-tr3000"
-WRT_WORD="12345678"
-if [ -f "$WIFI_FILE" ]; then
-	#修改WIFI名称
-	sed -i "s/ImmortalWrt/$WRT_SSID/g" $WIFI_FILE
-	#修改WIFI加密
-	sed -i "s/encryption=.*/encryption='psk2+ccmp'/g" $WIFI_FILE
-	#修改WIFI密码
-	sed -i "/set wireless.default_\${dev}.encryption='psk2+ccmp'/a \\\t\t\t\t\t\set wireless.default_\${dev}.key='$WRT_WORD'" $WIFI_FILE
-fi
+
 
 
 # Modify default IP
