@@ -20,6 +20,7 @@ on:
           - "ikuai-q6000-nand"
           - "ikuai-q6000-emmc"
           - "all"
+          - "other"
 
       repo:
         description: "指定源码仓库地址"
@@ -146,6 +147,10 @@ jobs:
               MATRIX='["ikuai-q6000-nand"]'
               ;;
 
+            other)
+              MATRIX='["other"]'
+              ;;
+              
             ikuai-q6000-emmc)
               MATRIX='["ikuai-q6000-emmc"]'
               ;;
@@ -501,6 +506,9 @@ jobs:
               "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-nand.sh
               ;;
 
+            other)
+              echo "other"
+              ;;
             ikuai-q6000-emmc)
               echo "Apply ikuai-q6000-emmc"
               "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-emmc.sh
@@ -558,6 +566,10 @@ jobs:
               CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
               ;;
 
+            other)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7981-other.config"
+              ;;
+              
             ikuai-q6000-emmc)
               CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-emmc.config"
               ;;
