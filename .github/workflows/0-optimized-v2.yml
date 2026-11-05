@@ -20,7 +20,8 @@ on:
           - "ikuai-q6000-nand"
           - "ikuai-q6000-emmc"
           - "all"
-          - "other"
+          - "mt7981-other"
+          - "mt7986-other"
 
       repo:
         description: "指定源码仓库地址"
@@ -147,15 +148,19 @@ jobs:
               MATRIX='["ikuai-q6000-nand"]'
               ;;
 
-            other)
-              MATRIX='["other"]'
+            mt7981-other)
+              MATRIX='["mt7981-other"]'
+              ;;
+
+            mt7986-other)
+              MATRIX='["mt7986-other"]'
               ;;
               
             ikuai-q6000-emmc)
               MATRIX='["ikuai-q6000-emmc"]'
               ;;
             all)
-              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand","ikuai-q6000-emmc"]'
+              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand","ikuai-q6000-emmc","mt7981-other","mt7986-other"]'
               ;;
 
             *)
@@ -506,9 +511,14 @@ jobs:
               "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-nand.sh
               ;;
 
-            other)
-              echo "other"
+            mt7981-other)
+              echo "mt7981-other"
               ;;
+              
+            mt7986-other)
+              echo "mt7986-other"
+              ;;
+              
             ikuai-q6000-emmc)
               echo "Apply ikuai-q6000-emmc"
               "$GITHUB_WORKSPACE"/devices/diy-ikuai-q6000-emmc.sh
@@ -566,8 +576,12 @@ jobs:
               CONFIG="$GITHUB_WORKSPACE/config/mt7986-ikuai-q6000-nand.config"
               ;;
 
-            other)
+            mt7981-other)
               CONFIG="$GITHUB_WORKSPACE/config/mt7981-other.config"
+              ;;
+
+            mt7986-other)
+              CONFIG="$GITHUB_WORKSPACE/config/mt7986-other.config"
               ;;
               
             ikuai-q6000-emmc)
