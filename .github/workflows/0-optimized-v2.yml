@@ -14,14 +14,12 @@ on:
         default: "all"
         options:
           - "cudy-tr3000-512M"
-          - "cudy-tr3000-256M"
-          - "cudy-tr3000-128M"
           - "QLB-4Pro"
           - "ikuai-q6000-nand"
           - "ikuai-q6000-emmc"
-          - "all"
           - "mt7981-other"
           - "mt7986-other"
+          - "all"
 
       repo:
         description: "指定源码仓库地址"
@@ -132,14 +130,6 @@ jobs:
               MATRIX='["cudy-tr3000-512M"]'
               ;;
 
-            cudy-tr3000-256M)
-              MATRIX='["cudy-tr3000-256M"]'
-              ;;
-
-            cudy-tr3000-128M)
-              MATRIX='["cudy-tr3000-128M"]'
-              ;;
-
             QLB-4Pro)
               MATRIX='["QLB-4Pro"]'
               ;;
@@ -160,7 +150,7 @@ jobs:
               MATRIX='["ikuai-q6000-emmc"]'
               ;;
             all)
-              MATRIX='["cudy-tr3000-512M","cudy-tr3000-256M","cudy-tr3000-128M","QLB-4Pro","ikuai-q6000-nand","ikuai-q6000-emmc","mt7981-other","mt7986-other"]'
+              MATRIX='["cudy-tr3000-512M","QLB-4Pro","ikuai-q6000-nand","ikuai-q6000-emmc","mt7981-other","mt7986-other"]'
               ;;
 
             *)
@@ -491,16 +481,6 @@ jobs:
               "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
               ;;
 
-            cudy-tr3000-256M)
-              echo "Apply TR3000 256M"
-              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
-              ;;
-
-            cudy-tr3000-128M)
-              echo "Apply TR3000 128M"
-              # "$GITHUB_WORKSPACE"/devices/diy-cudy-tr3000-512MB.sh
-              ;;
-
             QLB-4Pro)
               echo "Apply QLB-4Pro"
               "$GITHUB_WORKSPACE"/devices/diy-qlb-4pro.sh
@@ -558,14 +538,6 @@ jobs:
 
             cudy-tr3000-512M)
               CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-512m.config"
-              ;;
-
-            cudy-tr3000-256M)
-              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-256m.config"
-              ;;
-
-            cudy-tr3000-128M)
-              CONFIG="$GITHUB_WORKSPACE/config/mt7981-cudy-tr3000-128m.config"
               ;;
 
             QLB-4Pro)
