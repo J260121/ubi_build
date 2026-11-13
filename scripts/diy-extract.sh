@@ -17,7 +17,7 @@ REPO_DIR="${GITHUB_WORKSPACE:-$(cd "$(dirname "$0")/.." && pwd)}"
 OPENWRT_DIR="${OPENWRT_DIR:-$REPO_DIR/openwrt}"
 
 # 配置压缩包
-ARCHIVE="${CONFIG_ARCHIVE:-$REPO_DIR/config/$ARCHIVE_NAME}"
+ARCHIVE="${CONFIG_ARCHIVE:-$REPO_DIR/zip/$ARCHIVE_NAME}"
 
 # 固件 files 目录
 DEST="$OPENWRT_DIR/files"
