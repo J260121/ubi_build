@@ -451,7 +451,8 @@ jobs:
           	sed -i "/set wireless.default_\${dev}.encryption='psk2+ccmp'/a \\\t\t\t\t\t\set wireless.default_\${dev}.key='$WRT_WORD'" $WIFI_FILE
           fi
 
-          cp -f "$GITHUB_WORKSPACE"/Banner/* "./files/etc/banner/"
+          cp -f "$GITHUB_WORKSPACE"/Banner/banner "./files/etc/banner"
+          cat "./files/etc/banner"
       # ======================================================
       # 选择对应 Config
       # ======================================================
