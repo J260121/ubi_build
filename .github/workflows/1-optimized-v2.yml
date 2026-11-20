@@ -373,7 +373,7 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/dts" ]; then
             cp -f \
               "$GITHUB_WORKSPACE"/dts/* \
-              .target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
+              target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/
           fi
 
           chmod +x "$GITHUB_WORKSPACE"/devices/*.sh
