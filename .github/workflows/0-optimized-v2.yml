@@ -1,4 +1,4 @@
-name: ImmortalWrt Builder DIY  fixed
+name: 237 ImmortalWrt Builder DIY  fixed
 
 on:
   repository_dispatch:
@@ -25,14 +25,14 @@ on:
         description: "指定源码仓库地址"
         required: true
         type: string
-        #default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git"
-        default: "https://github.com/hanwckf/immortalwrt-mt798x.git"
+        default: "https://github.com/padavanonly/immortalwrt-mt798x-6.6.git"
+        #default: "https://github.com/hanwckf/immortalwrt-mt798x.git"
       branch:
         description: "指定源码 Branch"
         required: false
         type: string
-        #default: "openwrt-24.10-6.6"
-        default: "openwrt-21.02"
+        default: "openwrt-24.10-6.6"
+        #default: "openwrt-21.02"
 
       commit:
         description: "指定源码 Commit，留空使用 Branch 最新代码"
