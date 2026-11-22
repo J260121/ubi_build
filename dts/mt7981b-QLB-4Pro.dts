@@ -1,12 +1,11 @@
 /dts-v1/;
 
 / {
-	compatible = "mediatek,mt7981-spim-snand-rfb";
 	interrupt-parent = <0x01>;
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
-	model = "MediaTek MT7981 RFB";
-
+	model = "QLB-4Pro";
+	compatible = "QLB,4Pro", "mediatek,mt7981";
 	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
